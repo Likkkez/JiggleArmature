@@ -832,7 +832,7 @@ def register():
     bpy.types.Bone.jiggle_Kld=bpy.props.FloatProperty(name = "linear damping",min=0.0, max=1.0,default = 0.01, update = funp("jiggle_Kld"))
     bpy.types.Bone.jiggle_Kd =bpy.props.FloatProperty(name = "angular damping",min=0.0, max=1.0,default = 0.01, update = funp("jiggle_Kd"))
     bpy.types.Bone.jiggle_Ks =bpy.props.FloatProperty(name = "stiffness",min=0.0 , max = 1.0, default = 0.8, update = funp("jiggle_Ks"))
-    bpy.types.Bone.gravity_multiplier =bpy.props.FloatProperty(name = "gravity multiplier",min=0.0 , max = 1000.0, default = 1.0, update = funp("gravity_multiplier"))
+    bpy.types.Bone.gravity_multiplier =bpy.props.FloatProperty(name = "gravity multiplier",min=0.0 , default = 1.0, update = funp("gravity_multiplier"))
     bpy.types.Bone.jiggle_mass =bpy.props.FloatProperty(name = "mass",min=0.0001, default = 1.0, update = funp("jiggle_mass"))   
     bpy.types.Bone.jiggle_R = bpy.props.FloatVectorProperty(name="rotation", size=4,subtype='QUATERNION')
     bpy.types.Bone.jiggle_W = bpy.props.FloatVectorProperty(size=3,subtype='XYZ') #angular velocity
