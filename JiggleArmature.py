@@ -221,7 +221,7 @@ class JARM_PT_bone(bpy.types.Panel):
             col.prop(bon,"jiggle_Kd")  
             col.prop(bon,"jiggle_Kld")             
             col.prop(bon,"jiggle_mass")  
-            
+            col.prop(bon,"gravity_multiplier")
             col.prop_search(bon,"jiggle_control_object",bpy.data,"objects")
             if(bon.jiggle_control_object in bpy.data.objects): 
                 o = bpy.data.objects[bon.jiggle_control_object]
@@ -629,7 +629,7 @@ def step(scene):
                         wb.w = 1.0/Jb.jiggle_mass
                         wb.k = 1- pow(1-Jb.jiggle_Ks, 1/scene.jiggle.iterations)
                         Jb.jiggle_V*= 1.0-Jb.jiggle_Kld
-                        Jb.jiggle_V+= scene.gravity*dt
+                        Jb.jiggle_V+= scene.gravity*Jb.gravity_multiplier*dt
                         Jb.jiggle_W*= 1.0-Jb.jiggle_Kd
                         qv = Quaternion()
                         qv.x =Jb.jiggle_W[0]
@@ -832,6 +832,7 @@ def register():
     bpy.types.Bone.jiggle_Kld=bpy.props.FloatProperty(name = "linear damping",min=0.0, max=1.0,default = 0.01, update = funp("jiggle_Kld"))
     bpy.types.Bone.jiggle_Kd =bpy.props.FloatProperty(name = "angular damping",min=0.0, max=1.0,default = 0.01, update = funp("jiggle_Kd"))
     bpy.types.Bone.jiggle_Ks =bpy.props.FloatProperty(name = "stiffness",min=0.0 , max = 1.0, default = 0.8, update = funp("jiggle_Ks"))
+    bpy.types.Bone.gravity_multiplier =bpy.props.FloatProperty(name = "gravity multiplier",min=0.0 , max = 1000.0, default = 1.0, update = funp("gravity_multiplier"))
     bpy.types.Bone.jiggle_mass =bpy.props.FloatProperty(name = "mass",min=0.0001, default = 1.0, update = funp("jiggle_mass"))   
     bpy.types.Bone.jiggle_R = bpy.props.FloatVectorProperty(name="rotation", size=4,subtype='QUATERNION')
     bpy.types.Bone.jiggle_W = bpy.props.FloatVectorProperty(size=3,subtype='XYZ') #angular velocity
