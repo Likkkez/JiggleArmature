@@ -33,6 +33,12 @@
 # TODO: re-initialize bones when the jiggle bone checkbox is enabled.
 # Investigate what initializing bones does, and see if it can be made automatic (Other current use cases for it is when an armature is linked or a bone is deleted, you need to manually re-initialize)
 
+# Rename classes, functions, variables to be consistent, verbose and descriptive.
+# If we can't deprecate the initialize operator, at least make sure to run it whenever a jiggle bone toggle is changed.
+# Pack all jiggle bone properties into a CollectionProperty (need a new JiggleProperties class)
+# See if we can't avoid using ugly global variables.
+# Split into separate files: __init__, operators, physics, utils, ui.
+
 bl_info = {
 	"name": "Jiggle Armature",
 	"author": "Simón Flores",
@@ -56,13 +62,17 @@ from bpy.props import *
 
 class JiggleArmature(bpy.types.PropertyGroup): 
 	enabled: BoolProperty(default=True)
-	fps: FloatProperty(name = "simulation fps",default = 24)
-	time_acc: FloatProperty(default= 0.0)
+	fps: FloatProperty(name = "simulation fps", default = 24)
+	time_acc: FloatProperty(default = 0.0)
 	
 class JiggleScene(bpy.types.PropertyGroup):
-	test_mode: BoolProperty(default=False)
-	sub_steps: IntProperty(min=1, default = 2)
-	iterations: IntProperty(name="Iteration", description="Higher values result in slower but higher quality simulation", min=1, default = 4) 
+	test_mode: BoolProperty(default = False)
+	sub_steps: IntProperty(min = 1, default = 2)
+	iterations: IntProperty(
+		name = "Iterations", 
+		description="Higher values result in slower but higher quality simulation", 
+		min=1, 
+		default = 4) 
 	last_frame: IntProperty()
 
 class JARM_PT_armature(bpy.types.Panel):
@@ -72,6 +82,7 @@ class JARM_PT_armature(bpy.types.Panel):
 	bl_region_type = 'WINDOW'
 	bl_context = "data"
 	bl_options = {'DEFAULT_CLOSED'}
+
 	@classmethod
 	def poll(cls, context):
 		return (context.object is not None and context.object.type == 'ARMATURE')
@@ -124,6 +135,7 @@ def setq(om, m):
 		om[i]= m[i]
 		
 class JARM_OT_reset(bpy.types.Operator):
+	"""Reset state""" #TODO: Better tooltip
 	bl_idname = "jiggle.reset"
 	bl_label = "Reset State"
 
@@ -148,7 +160,7 @@ class JARM_OT_reset(bpy.types.Operator):
 		return {'FINISHED'}
 		
 class JARM_OT_set_rest(bpy.types.Operator):
-	""" Set jiggle rest pose """
+	"""Set jiggle rest pose"""
 	bl_idname = "jiggle.set_rest"
 	bl_label = "Set Rest"
 
@@ -391,7 +403,7 @@ sqrt = math.sqrt
 
 #NOTE: the following gradient computation implementation was automatically generated, if possible, it should be change for a clearer implementation 
 def quatSpringGradient2(Q0,Q1,r):
-	"""	Returns the gradient of C = |Q0*r - Q1|^2 wrt Q0 and Q1 """
+	"""Returns the gradient of C = |Q0*r - Q1|^2 wrt Q0 and Q1"""
 	Q0x = Q0.x
 	Q0y = Q0.y
 	Q0z = Q0.z
@@ -807,7 +819,7 @@ def initialize_bones(dummy):
 	findarmatures(bpy.context.scene)
 
 class JARM_OT_bake(bpy.types.Operator):
-	""" Bake jiggle bone motion to keyframes """
+	"""Bake jiggle bone motion to keyframes"""
 	a: BoolProperty()
 	bl_idname = "jiggle.bake"
 	bl_label = "Bake Jiggle Physics"
@@ -817,7 +829,7 @@ class JARM_OT_bake(bpy.types.Operator):
 		return {'FINISHED'}
 	
 class JARM_OT_init_bones(bpy.types.Operator):
-	""" Initialize jiggle bones """
+	"""Initialize jiggle bones"""
 	a: BoolProperty()
 	bl_idname = "jiggle.initialize"
 	bl_label = "Initialize Jiggle Bones"
