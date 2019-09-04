@@ -1,31 +1,37 @@
-#Copyright (c) 2019 Simón Flores (https://github.com/cheece)
+# Copyright (c) 2019 Simón Flores (https://github.com/cheece)
 
-#Permission is hereby granted, free of charge, 
-#to any person obtaining a copy of this software 
-#and associated documentation files (the "Software"), 
-#to deal in the Software without restriction, 
-#including without limitation the rights to use, 
-#copy, modify, merge, publish, distribute, sublicense,
-#and/or sell copies of the Software, and to permit 
-#persons to whom the Software is furnished to do so,
-#subject to the following conditions:The above copyright to_quaternion
-#notice and this permission notice shall be included 
-#in all copies or substantial portions of the Software.
+# Permission is hereby granted, free of charge, 
+# to any person obtaining a copy of this software 
+# and associated documentation files (the "Software"), 
+# to deal in the Software without restriction, 
+# including without limitation the rights to use, 
+# copy, modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software, and to permit 
+# persons to whom the Software is furnished to do so,
+# subject to the following conditions:The above copyright to_quaternion
+# notice and this permission notice shall be included 
+# in all copies or substantial portions of the Software.
 
-#THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY 
-#OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
-#LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
-#FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO
-#EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE 
-#FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN 
-#AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, 
-#OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR 
-#OTHER DEALINGS IN THE SOFTWARE.
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY 
+# OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
+# LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+# FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO
+# EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE 
+# FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN 
+# AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, 
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR 
+# OTHER DEALINGS IN THE SOFTWARE.
 
-#this a jiggle bone animation tool 
-#to enable jiggle physics first enable "jiggle scene" in the scene properties and then enable jiggle bone on the bones
+# This addon adds jiggle physics to bones. 
+# How to use:
+#   Enable "Jiggle Scene" in the scene properties.
+#   Enable "Jiggle Bone" on the bones.
+#   In the Jiggle Scene settings, click "Initialize Bones".
 
-#based on the Position Based Dynamics paper by Müller et al. http://matthias-mueller-fischer.ch/publications/posBasedDyn.pdf
+# Based on the Position Based Dynamics paper by Müller et al. http://matthias-mueller-fischer.ch/publications/posBasedDyn.pdf
+
+# TODO: re-initialize bones when the jiggle bone checkbox is enabled.
+# Investigate what initializing bones does, and see if it can be made automatic (Other current use cases for it is when an armature is linked or a bone is deleted, you need to manually re-initialize)
 
 bl_info = {
 	"name": "Jiggle Armature",
@@ -46,18 +52,18 @@ import os
 from bpy.types import Menu, Panel, Operator
 from bpy_extras.io_utils import ImportHelper, ExportHelper
 from bpy.app.handlers import persistent
-from bpy.props import StringProperty, BoolProperty, EnumProperty
+from bpy.props import *
 
 class JiggleArmature(bpy.types.PropertyGroup): 
-	enabled : bpy.props.BoolProperty(default=True)
-	fps: bpy.props.FloatProperty(name = "simulation fps",default = 24)
-	time_acc: bpy.props.FloatProperty(default= 0.0)
+	enabled: BoolProperty(default=True)
+	fps: FloatProperty(name = "simulation fps",default = 24)
+	time_acc: FloatProperty(default= 0.0)
 	
 class JiggleScene(bpy.types.PropertyGroup):
-	test_mode: bpy.props.BoolProperty(default=False)
-	sub_steps :bpy.props.IntProperty(min=1, default = 2)
-	iterations : bpy.props.IntProperty(min=1, default = 4) 
-	last_frame : bpy.props.IntProperty()
+	test_mode: BoolProperty(default=False)
+	sub_steps: IntProperty(min=1, default = 2)
+	iterations: IntProperty(name="Iteration", description="Higher values result in slower but higher quality simulation", min=1, default = 4) 
+	last_frame: IntProperty()
 
 class JARM_PT_armature(bpy.types.Panel):
 	bl_idname = "ARMATURE_PT_jiggle"
@@ -73,8 +79,8 @@ class JARM_PT_armature(bpy.types.Panel):
 	def draw(self, context):
 		layout = self.layout
 		col = layout.column() 
-		col.prop(context.object.data.jiggle,"enabled")
-		col.prop(context.object.data.jiggle,"fps")
+		col.prop(context.object.data.jiggle, "enabled")
+		col.prop(context.object.data.jiggle, "fps")
 		
 class JARM_PT_scene(bpy.types.Panel):
 	bl_idname = "SCENE_PT_jiggle"
@@ -120,20 +126,19 @@ def setq(om, m):
 class JARM_OT_reset(bpy.types.Operator):
 	bl_idname = "jiggle.reset"
 	bl_label = "Reset State"
+
 	def execute(self, context):
 		scene = context.scene
 		for o in scene.objects:
-			if(o.select_get() and o.type == 'ARMATURE' ):
+			if(o.select_get() and o.type == 'ARMATURE'):
 				arm = o.data
 				ow = o.matrix_world
-				scale = maxis(ow,0).length
+				scale = maxis(ow, 0).length
 				iow = ow.inverted()
 				i=0
 				for b in o.pose.bones:
 					if(b.bone.select):
-						M = ow@b.matrix
-						
-						
+						M = ow @ b.matrix
 						Jb = b.bone 
 						setq(Jb.jiggle_R, M.to_quaternion().normalized())
 						Jb.jiggle_V = Vector((0,0,0))
@@ -143,8 +148,10 @@ class JARM_OT_reset(bpy.types.Operator):
 		return {'FINISHED'}
 		
 class JARM_OT_set_rest(bpy.types.Operator):
+	""" Set jiggle rest pose """
 	bl_idname = "jiggle.set_rest"
 	bl_label = "Set Rest"
+
 	def execute(self, context):
 		scene = context.scene
 		for o in scene.objects:
@@ -156,10 +163,11 @@ class JARM_OT_set_rest(bpy.types.Operator):
 				i=0
 				for b in o.pose.bones:
 					if(b.bone.select):
-						M = b.parent.matrix.inverted()@b.matrix #ow*Sbp.wmat* Sb.rmat #im 
+						M = b.parent.matrix.inverted() @ b.matrix #ow*Sbp.wmat* Sb.rmat #im 
 						Jb = b.bone 
 						setq(Jb.jiggle_rest, M.to_quaternion().normalized()) 
 						Jb.jiggle_use_custom_rest = True
+		
 		return {'FINISHED'}
 
 class JARM_PT_bone(bpy.types.Panel):
@@ -194,7 +202,6 @@ class JARM_PT_bone(bpy.types.Panel):
 			col.label(text= "JiggleArmature is disabled for the armature, see the armature properties")
 			
 		if(bon.jiggle_enabled):
-
 			col.prop(context.bone,"jiggle_Ks")
 			col.prop(bon,"jiggle_Kd")
 			col.prop(bon,"jiggle_Kld")
@@ -286,10 +293,10 @@ class JB:
 		self.iI = Matrix.Identity(3)*(self.w/(self.l*self.l)*5.0/2.0)
 	def updateIW(self):
 		rot = self.Q.to_matrix()
-		self.iIw = rot@self.iI@rot.transposed()
+		self.iIw = rot@self.iI @ rot.transposed()
  
 def propB(ow,b, l, p):
-	j = JB(b.p_bone, ow@b.p_bone.matrix, p)
+	j = JB(b.p_bone, ow @ b.p_bone.matrix, p)
 	l.append(j)
 	for c in b.children:
 		propB(ow,c,l,j)
@@ -347,8 +354,8 @@ def locSpring(Jb):
 	Jb.updateIW()
 	Jb.parent.updateIW()
 	
-	connector0 = Jb.parent.P+Jb.parent.Q@v0
-	connector1 = Jb.P+Jb.Q@Vector((0,-lf,0))
+	connector0 = Jb.parent.P+Jb.parent.Q @ v0
+	connector1 = Jb.P+Jb.Q @ Vector((0,-lf,0))
  
 	computeMatrixK(connector0, w0, P0, Jb.parent.iIw, K1)
 	computeMatrixK(connector1, w1, P1, Jb.iIw, K2)
@@ -366,7 +373,7 @@ def locSpring(Jb):
 		otQ.y = ot[1]
 		otQ.z = ot[2]
 		otQ.w = 0
-		Jb.parent.Q = qadd(Jb.parent.Q, otQ@Jb.parent.Q*0.5).normalized() 
+		Jb.parent.Q = qadd(Jb.parent.Q, otQ @ Jb.parent.Q*0.5).normalized() 
 		
 	if (w1 != 0.0):
 		r1 = connector1 - P1
@@ -378,7 +385,7 @@ def locSpring(Jb):
 		otQ.y = ot[1]
 		otQ.z = ot[2]
 		otQ.w = 0
-		Jb.Q = qadd(Jb.Q, otQ@Jb.Q*0.5).normalized() 
+		Jb.Q = qadd(Jb.Q, otQ @ Jb.Q*0.5).normalized() 
 		
 sqrt = math.sqrt
 
@@ -505,7 +512,7 @@ def quatSpring(Jb,r=None,k=None):
 	if(k==None):
 		k = Jb.k 
 		
-	ra = Q0.inverted()@Q1
+	ra = Q0.inverted() @ Q1
 	if ra.dot(r) < 0:
 		r = -r
 		
@@ -536,7 +543,6 @@ def quatSpring(Jb,r=None,k=None):
 		Q1.w+=dQ1w*s*w1*k
 		Jb.Q = Q1.normalized()
 		
-
 jiggle_arm_list=[]
 
 class jiggle_hierarchy_bones():
@@ -551,7 +557,6 @@ class jiggle_hierarchy_armatures:
 		self.bones_root=[]
 		self.bones_used=[]
 	
-
 def find_children(arm,bone_jiggle):
 	for b in bone_jiggle.bone.children:
 		if b.jiggle_enabled:
@@ -576,7 +581,6 @@ def findarmatures(scene):
 						x.bones_root.append(bc)
 						print(bc.bone)
 
-	 
 def step(scene):
 	global iters 
 	global dt
@@ -626,13 +630,13 @@ def step(scene):
 					wb.R = wb.Q = Jb.jiggle_R
 					wb.rest = wb.rest_w 
 					if(b.parent!=None):
-						wb.rest = wb.parent.rest_w.inverted()@wb.rest_w 
+						wb.rest = wb.parent.rest_w.inverted() @ wb.rest_w 
 			
 					wb.rest_base = b.bone.matrix_local
 					if(b.parent!=None):
-						wb.rest_base = b.parent.bone.matrix_local.inverted()@wb.rest_base
+						wb.rest_base = b.parent.bone.matrix_local.inverted() @ wb.rest_base
 						
-					wb.rest_p = wb.parent.rest_w.inverted()@ (maxis(wb.rest_w,3)- maxis(wb.rest_w,1)*b.bone.length*0.5*scale)# mpos(wb.rest)
+					wb.rest_p = wb.parent.rest_w.inverted() @ (maxis(wb.rest_w,3)- maxis(wb.rest_w,1)*b.bone.length*0.5*scale)# mpos(wb.rest)
 					
 					wb.l = b.bone.length*scale
 					wb.w = 1.0/Jb.jiggle_mass
@@ -646,7 +650,7 @@ def step(scene):
 					qv.z = Jb.jiggle_W[2]
 					qv.w = 0
 					
-					wb.Q = qadd(wb.Q, qv@wb.Q*dt*0.5).normalized() 
+					wb.Q = qadd(wb.Q, qv @ wb.Q*dt*0.5).normalized() 
 					
 					wb.P = wb.X + Jb.jiggle_V*dt
 					wb.computeI()
@@ -662,12 +666,10 @@ def step(scene):
 							cb = target_object.pose.bones[Jb.jiggle_control_bone]
 							target_matrix = cb.matrix
 							if(cb.parent!=None):
-								target_matrix = cb.parent.matrix.inverted()@target_matrix
+								target_matrix = cb.parent.matrix.inverted() @ target_matrix
 						
 						wb.cQ = target_matrix.to_quaternion().normalized()
 						wb.Kc = 1- pow(1-Jb.jiggle_control, 1.0/scene.jiggle.iterations)
-					
-					
 					
 					bl2.append(wb) 
 				else:
@@ -675,15 +677,14 @@ def step(scene):
 					wb.X = wb.P = mpos(M)+maxis(M,1)*b.bone.length*0.5
 					wb.R = wb.Q = M.to_quaternion().normalized()
 					
-					M = ow@b.matrix
+					M = ow @ b.matrix
 					
 					Jb = b.bone 
 					setq(Jb.jiggle_R, M.to_quaternion().normalized())
 					Jb.jiggle_V = Vector((0,0,0))
 					Jb.jiggle_P = mpos(M)+maxis(M,1)*b.bone.length*0.5
 					Jb.jiggle_W = Vector((0,0,0))
-					
-					
+			
 			for i in range(scene.jiggle.iterations):
 				#parent constraint
 				for wb in bl2:
@@ -702,7 +703,6 @@ def step(scene):
 					if(wb.cQ!=None):
 						quatSpring(wb, wb.cQ, wb.Kc)
 
-
 			for wb in bl2:
 				b = wb.b
 				Jb = b.bone 
@@ -716,7 +716,7 @@ def step(scene):
 
 				Jb.jiggle_V = (wb.P - wb.X)/dt
 				Jb.jiggle_P = wb.P.copy()
-				qv = wb.Q@Jb.jiggle_R.conjugated() 
+				qv = wb.Q @ Jb.jiggle_R.conjugated() 
 				Jb.jiggle_W = Vector((qv.x,qv.y,qv.z))*(2/dt)
 				Jb.jiggle_R = wb.Q
 
@@ -731,14 +731,12 @@ def step(scene):
 				pM = ow
 				if(b.parent!=None):
 					pM = wb.parent.M
-				mb = (pM@wb.rest_base).inverted()@wb.M
+				mb = (pM @ wb.rest_base).inverted() @ wb.M
 
 				b.matrix_basis = mb
 
-
 	scene.jiggle.last_frame+= 1
  
-
 @persistent
 def update_post(scene, tm = False):
 	global iters 
@@ -754,7 +752,7 @@ def update(scene, tm = False):
 	global ctx
 	global cc 
 	dt = 1.0/(scene.render.fps*scene.jiggle.sub_steps)
-	if(not (scene.jiggle.test_mode or tm)):# or (backing and not tm)):
+	if(not (scene.jiggle.test_mode or tm)): # or (backing and not tm)):
 		return 
 	step(scene)
 
@@ -768,8 +766,6 @@ def bake(bake_all):
 	
 	for o in scene.objects:
 		if(o.type == 'ARMATURE' and (o.select_get() or bake_all)):
-			
-			
 			arm = o.data
 			ow = o.matrix_world
 			scale = maxis(ow,0).length
@@ -778,7 +774,7 @@ def bake(bake_all):
 			for b in o.pose.bones:
 				b.bone.select = (b.bone.select or bake_all) and b.bone.jiggle_enabled
 				if(b.bone.select or bake_all and b.bone.jiggle_enabled):
-					M = ow@b.matrix
+					M = ow @ b.matrix
 					
 					Jb = b.bone 
 					setq(Jb.jiggle_R, M.to_quaternion().normalized())
@@ -811,20 +807,25 @@ def initialize_bones(dummy):
 	findarmatures(bpy.context.scene)
 
 class JARM_OT_bake(bpy.types.Operator):
-	a: bpy.props.BoolProperty()
+	""" Bake jiggle bone motion to keyframes """
+	a: BoolProperty()
 	bl_idname = "jiggle.bake"
-	bl_label = "Bake Animation"
+	bl_label = "Bake Jiggle Physics"
+
 	def execute(self, context):
 		bake(self.a)
 		return {'FINISHED'}
 	
 class JARM_OT_init_bones(bpy.types.Operator):
-	a: bpy.props.BoolProperty()
+	""" Initialize jiggle bones """
+	a: BoolProperty()
 	bl_idname = "jiggle.initialize"
-	bl_label = "Initialize armatures and bones"
+	bl_label = "Initialize Jiggle Bones"
+
 	def execute(self, context):
 		initialize_bones('dummy')
 		return {'FINISHED'}
+
 classes = ( 
 	JARM_PT_armature,
 	JiggleScene,
@@ -838,7 +839,6 @@ classes = (
 )
 
 def register():
-	
 	from bpy.utils import register_class
 	for cls in classes:
 		register_class(cls) 
@@ -847,31 +847,70 @@ def register():
 	
 	bpy.app.handlers.load_post.append(initialize_bones) 
 	 
-	bpy.types.Scene.jiggle = bpy.props.PointerProperty(type = JiggleScene) 
+	bpy.types.Scene.jiggle = PointerProperty(type = JiggleScene) 
 
-	bpy.types.Armature.jiggle = bpy.props.PointerProperty(type = JiggleArmature,options={'ANIMATABLE'}) 
+	bpy.types.Armature.jiggle = PointerProperty(type = JiggleArmature,options={'ANIMATABLE'}) 
 	
-	bpy.types.Bone.jiggle_enabled = bpy.props.BoolProperty(default=False, update = funp("jiggle_enabled"))
-	bpy.types.Bone.jiggle_Kld=bpy.props.FloatProperty(name = "linear damping",min=0.0, max=1.0,default = 0.01, update = funp("jiggle_Kld"))
-	bpy.types.Bone.jiggle_Kd =bpy.props.FloatProperty(name = "angular damping",min=0.0, max=1.0,default = 0.01, update = funp("jiggle_Kd"))
-	bpy.types.Bone.jiggle_Ks =bpy.props.FloatProperty(name = "stiffness",min=0.0 , max = 1.0, default = 0.8, update = funp("jiggle_Ks"))
-	bpy.types.Bone.gravity_multiplier =bpy.props.FloatProperty(name = "gravity multiplier",min=0.0 , default = 1.0, update = funp("gravity_multiplier"))
-	bpy.types.Bone.jiggle_mass =bpy.props.FloatProperty(name = "mass",min=0.0001, default = 1.0, update = funp("jiggle_mass"))
-	bpy.types.Bone.jiggle_R = bpy.props.FloatVectorProperty(name="rotation", size=4,subtype='QUATERNION')
-	bpy.types.Bone.jiggle_W = bpy.props.FloatVectorProperty(size=3,subtype='XYZ') #angular velocity
-	bpy.types.Bone.jiggle_P = bpy.props.FloatVectorProperty(size=3,subtype='XYZ')
-	bpy.types.Bone.jiggle_V = bpy.props.FloatVectorProperty(size=3,subtype='XYZ')	#linear velocity, ok? 
+	bpy.types.Bone.jiggle_enabled = BoolProperty(
+		name = "Enable Jiggle", 
+		description = "Enable Jiggle Physics", 
+		default = False, 
+		update = funp("jiggle_enabled"))
+	bpy.types.Bone.jiggle_Kld = FloatProperty(
+		name = "Linear Damping", 
+		min = 0.0, 
+		max = 1.0, 
+		default = 0.01, 
+		update = funp("jiggle_Kld"))
+	bpy.types.Bone.jiggle_Kd = FloatProperty(
+		name = "Angular Damping", 
+		min = 0.0, 
+		max = 1.0, 
+		default = 0.01, 
+		update = funp("jiggle_Kd"))
+	bpy.types.Bone.jiggle_Ks = FloatProperty(
+		name = "Stiffness", 
+		min = 0.0, 
+		max = 1.0, 
+		default = 0.8, 
+		update = funp("jiggle_Ks"))
+	bpy.types.Bone.gravity_multiplier = FloatProperty(
+		name = "Gravity Multiplier", 
+		min = 0.0, 
+		default = 1.0, 
+		update = funp("gravity_multiplier"))
+	bpy.types.Bone.jiggle_mass = FloatProperty(
+		name = "Mass", 
+		min = 0.0001, 
+		default = 1.0, 
+		update = funp("jiggle_mass"))
+	bpy.types.Bone.jiggle_R = FloatVectorProperty(
+		name = "Rotation",
+		size = 4,
+		subtype = 'QUATERNION')
+
+	bpy.types.Bone.jiggle_W = FloatVectorProperty(size=3,subtype='XYZ') #angular velocity
+	bpy.types.Bone.jiggle_P = FloatVectorProperty(size=3,subtype='XYZ')
+	bpy.types.Bone.jiggle_V = FloatVectorProperty(size=3,subtype='XYZ') #linear velocity, ok? 
 	
-	bpy.types.Bone.jiggle_use_custom_rest =bpy.props.BoolProperty(default=False, name="Use Custom Rest Pose", update = funp("jiggle_use_custom_rest"))
-	
-	bpy.types.Bone.jiggle_rest =bpy.props.FloatVectorProperty(name="rotation", size=4,subtype='QUATERNION')
-	
-	bpy.types.Bone.jiggle_control =bpy.props.FloatProperty(name = "control",min=0.0, max=1.0,default = 1, update = funp("jiggle_control"))
-	bpy.types.Bone.jiggle_control_object =bpy.props.StringProperty(name = "control object")
-	bpy.types.Bone.jiggle_control_bone =bpy.props.StringProperty(name = "control bone")
+	bpy.types.Bone.jiggle_use_custom_rest =BoolProperty(
+		name = "Use Custom Rest Pose", 
+		default = False, 
+		update = funp("jiggle_use_custom_rest"))
+	bpy.types.Bone.jiggle_rest = FloatVectorProperty(
+		name = "Rotation", 
+		size = 4,
+		subtype = 'QUATERNION')
+	bpy.types.Bone.jiggle_control = FloatProperty(
+		name = "Control", 
+		min = 0.0, 
+		max = 1.0, 
+		default = 1, 
+		update = funp("jiggle_control"))
+	bpy.types.Bone.jiggle_control_object = StringProperty(name = "Control Object")
+	bpy.types.Bone.jiggle_control_bone = StringProperty(name = "Control Bone")
 	
 def unregister():
-
 	from bpy.utils import unregister_class
 	for cls in reversed(classes):
 		unregister_class(cls)
