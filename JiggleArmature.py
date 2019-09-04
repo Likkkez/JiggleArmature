@@ -578,6 +578,7 @@ class jiggle_hierarchy_armatures:
     def __init__(self):
         self.arm=None
         self.bones_root=[]
+        self.bones_used=[]
     
 
 def find_children(arm,bone_jiggle):
@@ -596,11 +597,13 @@ def findarmatures(scene):
             x.arm=o
             jiggle_arm_list.append(x)
             for b in o.data.bones:
-                if b.parent:
+                if b.parent and (b.parent not in x.bones_used):
                     if b.jiggle_enabled and (not b.parent.jiggle_enabled):
                         bc=jiggle_hierarchy_bones(o,b.parent)
+                        x.bones_used.append(b.parent)
                         find_children(o,bc)
                         x.bones_root.append(bc)
+                        print(bc.bone)
 
      
 def step(scene):
