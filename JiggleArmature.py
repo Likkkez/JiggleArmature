@@ -700,13 +700,13 @@ def step(scene):
 				#parent constraint
 				for jb in bl2:
 					db = jb.b.bone
-					if(db.parent != None):
+					if(db.parent == None):
 						continue
 					locSpring(jb)
 				#spring constraint
 				for jb in bl2:
 					db = jb.b.bone
-					if(db.parent != None):
+					if(db.parent == None):
 						continue
 					quatSpring(jb, db.jiggle_rest if db.jiggle_use_custom_rest else jb.rest.to_quaternion().normalized())
 					if(jb.cQ != None):
