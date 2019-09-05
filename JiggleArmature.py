@@ -34,6 +34,7 @@
 # Investigate what initializing bones does, and see if it can be made automatic (Other current use cases for it is when an armature is linked or a bone is deleted, you need to manually re-initialize)
 
 # Rename classes, functions, variables to be consistent, verbose and descriptive.
+# Merge jiggle_hierarchy_bone and jiggle_hierarchy_armature classes into JiggleBone class.
 # Move floating functions into classes.
 # If we can't deprecate the initialize operator, at least make sure to run it whenever a jiggle bone toggle is changed.
 # The whole idea of having to enable the jiggle in the scene, then in the armature, then in the bone, seems crazy to me. We should be able to simply enable it in the bone, and have some settings for it in the scene.
@@ -57,6 +58,7 @@ import bpy
 import os
 from mathutils import *
 import math
+from math import sqrt
 import os
 from bpy.types import Menu, Panel, Operator
 from bpy_extras.io_utils import ImportHelper, ExportHelper
@@ -138,7 +140,7 @@ def setq(om, m):
 		om[i]= m[i]
 		
 class JARM_OT_reset(bpy.types.Operator):
-	"""Reset state""" #TODO: Better tooltip
+	"""Reset state""" #TODO: Better tooltip - Wtf does this actually reset?
 	bl_idname = "jiggle.reset"
 	bl_label = "Reset State"
 
@@ -237,11 +239,11 @@ class JARM_PT_bone(bpy.types.Panel):
 			if(bon.parent==None):
 				col.label(text= "warning: jibblebones without parent will fall",icon='COLOR_RED')
 
-def centerM(wb,l):
-	ax = maxis(wb,1).normalized()
-	wb[0][3] += ax[0]*l*0.5
-	wb[1][3] += ax[1]*l*0.5
-	wb[2][3] += ax[2]*l*0.5
+def centerM(jhb, l):
+	ax = maxis(jhb, 1).normalized()
+	jhb[0][3] += ax[0] * l * 0.5
+	jhb[1][3] += ax[1] * l * 0.5
+	jhb[2][3] += ax[2] * l * 0.5
 
 #adapted from https://github.com/InteractiveComputerGraphics/PositionBasedDynamics/blob/master/PositionBasedDynamics/PositionBasedRigidBodyDynamics.cpp
 def computeMatrixK(connector,invMass,x,inertiaInverseW,K):
@@ -304,18 +306,21 @@ class JiggleBone:
 		self.Q = None
 		self.iI = Matrix.Identity(3) #first naive approach
 		self.iIw = self.iI
+
 	def computeI(self):
 		self.iI = Matrix.Identity(3)*(self.w/(self.l*self.l)*5.0/2.0)
+
 	def updateIW(self):
 		rot = self.Q.to_matrix()
 		self.iIw = rot@self.iI @ rot.transposed()
  
-def propB(ow, armature, jiggle_hierarchy, lst, parent):
-	pbone = jiggle_hierarchy.p_bone
-	jiggle_bone = JiggleBone(pbone, ow @ pbone.matrix, parent)
+def get_jiggle_children(arm_matrix, armature, jiggle_hierarchy_bone, lst, parent):
+	""" Recursive function to build a flat list of JiggleBone objects. """
+	pbone = jiggle_hierarchy_bone.p_bone
+	jiggle_bone = JiggleBone(pbone, arm_matrix @ pbone.matrix, parent)
 	lst.append(jiggle_bone)
-	for c in jiggle_hierarchy.children:
-		propB(ow, armature, c, lst, jiggle_bone)
+	for c in jiggle_hierarchy_bone.children:
+		get_jiggle_children(arm_matrix, armature, c, lst, jiggle_bone)
 	
 def maxis(M,i):
 	return Vector((M[0][i],M[1][i],M[2][i]))
@@ -402,8 +407,6 @@ def locSpring(Jb):
 		otQ.z = ot[2]
 		otQ.w = 0
 		Jb.Q = qadd(Jb.Q, otQ @ Jb.Q*0.5).normalized() 
-		
-sqrt = math.sqrt
 
 #NOTE: the following gradient computation implementation was automatically generated, if possible, it should be change for a clearer implementation 
 def quatSpringGradient2(Q0,Q1,r):
@@ -560,24 +563,27 @@ def quatSpring(Jb,r=None,k=None):
 
 jiggle_arm_list=[]
 
-class jiggle_hierarchy_bones:
-	def __init__(self, arm_o, bone):
-		self.bone = bone
-		self.p_bone = arm_o.pose.bones.get(bone.name)
-		self.children = []
+class jiggle_hierarchy_bone:
+	def __init__(self, arm_o, dbone):
+		self.bone = dbone		# Type: bpy.types.Bone
+		self.p_bone = arm_o.pose.bones.get(dbone.name)
+		self.children = []		# Type: 
 	
-class jiggle_hierarchy_armatures: 
+class jiggle_hierarchy_armature: 
 	def __init__(self):
-		self.arm=None
-		self.bones_root=[]
-		self.bones_used=[]
+		self.arm = None
+		self.bones_root = []	# Type: jiggle_hierarchy_bone
+		self.bones_used = []	# Type: bpy.types.Bone
 	
-def find_children(arm,bone_jiggle):
-	for b in bone_jiggle.bone.children:
-		if b.jiggle_enabled:
-			x=jiggle_hierarchy_bones(arm, b)
-			bone_jiggle.children.append(x)
-			find_children(arm,x)
+def find_children(arm, parent_jhb):
+	""" Create a jiggle_hierarchy_bone for every child of the bone of the parent jiggle_hierarchy bone for which jiggle_enabled==True. """
+	""" Yes, this is a fucking mess of a way to do things. TODO: fix. """
+	for child_db in parent_jhb.bone.children:
+		print(type(parent_jhb))
+		if child_db.jiggle_enabled:
+			jhb = jiggle_hierarchy_bone(arm, child_db)
+			parent_jhb.children.append(jhb)
+			find_children(arm, jhb)
 
 @persistent
 def initialize_bones(scene):
@@ -585,197 +591,171 @@ def initialize_bones(scene):
 	jiggle_arm_list.clear()
 	for o in scene.objects:
 		if(o.type == 'ARMATURE' and o.data.jiggle.enabled): 
-			x = jiggle_hierarchy_armatures()
-			x.arm = o
-			jiggle_arm_list.append(x)
+			jha = jiggle_hierarchy_armature()
+			jha.arm = o
+			jiggle_arm_list.append(jha)
 			for b in o.data.bones:
-				if(b.parent and b.parent not in x.bones_used):
+				if(b.parent and b.parent not in jha.bones_used):
 					if(b.jiggle_enabled and not b.parent.jiggle_enabled):
-						bc = jiggle_hierarchy_bones(o,b.parent)
-						x.bones_used.append(b.parent)
-						find_children(o,bc)
-						x.bones_root.append(bc)
-						print(bc.bone)
+						jhb_parent = jiggle_hierarchy_bone(o, b.parent)
+						jha.bones_used.append(b.parent)
+						find_children(o, jhb_parent)
+						jha.bones_root.append(jhb_parent)
 
 def step(scene):
-	global iters 
-	global dt
-	global ctx
-	global cc 
 	global jiggle_arm_list
 	dt = 1.0/(scene.render.fps)
 
 	for jiggle_arm in jiggle_arm_list:
 		arm_obj = jiggle_arm.arm
 		arm_data = arm_obj.data
-		ow = arm_obj.matrix_world.copy()
-		scale =maxis(ow,0).length 
+		arm_matrix = arm_obj.matrix_world.copy()
+		scale = maxis(arm_matrix, 0).length # I guess if we set this to 1, the jiggle bones won't scale when the armature object is scaled. But the thing is, right now the jiggle bones don't scale when their parent bone is scaled, so that's pretty shit.
 		
-		iow = ow.inverted()
-		iow3 = ow.to_3x3().inverted()
+		arm_data.jiggle.time_acc += dt * arm_data.jiggle.fps 
 		
-		i=0
-		arm_data.jiggle.time_acc+= dt* arm_data.jiggle.fps 
 		while arm_data.jiggle.time_acc > 1:
 			arm_data.jiggle.time_acc-=1 
 			
-			bone_list = []
-					
-			for jb in jiggle_arm.bones_root:
-				propB(ow, arm_obj, jb, bone_list, None)
-			
-			hooks= []
-			bl2 = []
-			for wb in bone_list:
-				b = wb.b
-				wb.rest_w = b.bone.matrix_local.copy()
-				saxis(wb.rest_w,3, maxis(wb.rest_w,3)*scale)
-				saxis(wb.rest_w,3, maxis(wb.rest_w,3)+maxis(wb.rest_w,1)*b.bone.length*0.5*scale)
+			jiggle_bones = []	# List that will store our JiggleBone objects.
+			for jhb in jiggle_arm.bones_root:
+				get_jiggle_children(arm_matrix, arm_obj, jhb, jiggle_bones, None)
+
+			bl2 = []	# TODO How does this differ from jiggle_bones?
+			for jhb in jiggle_bones:
+				b = jhb.b
+				jhb.rest_w = b.bone.matrix_local.copy()
+				saxis(jhb.rest_w, 3, maxis(jhb.rest_w, 3)*scale)
+				saxis(jhb.rest_w, 3, maxis(jhb.rest_w, 3)+maxis(jhb.rest_w, 1) * b.bone.length * 0.5 * scale)
 				
-			for wb in bone_list:
-				b = wb.b
-				crest = b
+			for jb in jiggle_bones:
+				b = jb.b
 				
-				wb.restW = b.bone.matrix_local.copy() * scale 
-				saxis(wb.restW,3, maxis(wb.restW,3)*scale)
+				jb.restW = b.bone.matrix_local.copy() * scale 
+				saxis(jb.restW, 3, maxis(jb.restW, 3) * scale)
 				
-				M = wb.M 
+				M = jb.M 
 				if(b.bone.jiggle_enabled):
-					Jb = b.bone 
-					wb.X = wb.P = Jb.jiggle_P
-					wb.R = wb.Q = Jb.jiggle_R
-					wb.rest = wb.rest_w 
-					if(b.parent!=None):
-						wb.rest = wb.parent.rest_w.inverted() @ wb.rest_w 
+					db = b.bone 
+					jb.X = jb.P = db.jiggle_P
+					jb.R = jb.Q = db.jiggle_R
+					jb.rest = jb.rest_w 
+					if(b.parent != None):
+						jb.rest = jb.parent.rest_w.inverted() @ jb.rest_w 
 			
-					wb.rest_base = b.bone.matrix_local
-					if(b.parent!=None):
-						wb.rest_base = b.parent.bone.matrix_local.inverted() @ wb.rest_base
+					jb.rest_base = b.bone.matrix_local
+					if(b.parent != None):
+						jb.rest_base = b.parent.bone.matrix_local.inverted() @ jb.rest_base
 						
-					wb.rest_p = wb.parent.rest_w.inverted() @ (maxis(wb.rest_w,3)- maxis(wb.rest_w,1)*b.bone.length*0.5*scale)# mpos(wb.rest)
+					jb.rest_p = jb.parent.rest_w.inverted() @ (maxis(jb.rest_w,3) - maxis(jb.rest_w,1) * b.bone.length * 0.5 * scale) # mpos(jb.rest)
 					
-					wb.l = b.bone.length*scale
-					wb.w = 1.0/Jb.jiggle_mass
-					wb.k = 1- pow(1-Jb.jiggle_Ks, 1/scene.jiggle.iterations)
-					Jb.jiggle_V*= 1.0-Jb.jiggle_Kld
-					Jb.jiggle_V+= scene.gravity*Jb.gravity_multiplier*dt
-					Jb.jiggle_W*= 1.0-Jb.jiggle_Kd
+					jb.l = b.bone.length * scale
+					jb.w = 1.0/db.jiggle_mass
+					jb.k = 1 - pow(1 - db.jiggle_Ks, 1/scene.jiggle.iterations)
+					db.jiggle_V *= 1.0 - db.jiggle_Kld
+					db.jiggle_V += scene.gravity * db.gravity_multiplier * dt
+					db.jiggle_W *= 1.0 - db.jiggle_Kd
 					qv = Quaternion()
-					qv.x =Jb.jiggle_W[0]
-					qv.y = Jb.jiggle_W[1]
-					qv.z = Jb.jiggle_W[2]
+					qv.x = db.jiggle_W[0]
+					qv.y = db.jiggle_W[1]
+					qv.z = db.jiggle_W[2]
 					qv.w = 0
 					
-					wb.Q = qadd(wb.Q, qv @ wb.Q*dt*0.5).normalized() 
+					jb.Q = qadd(jb.Q, qv @ jb.Q * dt * 0.5).normalized() 
 					
-					wb.P = wb.X + Jb.jiggle_V*dt
-					wb.computeI()
+					jb.P = jb.X + db.jiggle_V * dt
+					jb.computeI()
 					
 					#control object/bone constraint
-					if(Jb.jiggle_control_object in bpy.data.objects): 
+					if(db.jiggle_control_object in bpy.data.objects): 
 						
-						target_object = bpy.data.objects[Jb.jiggle_control_object]
+						target_object = bpy.data.objects[db.jiggle_control_object]
 						
 						target_matrix = target_object.matrix_local
 						
-						if(target_object.type =='ARMATURE' and Jb.jiggle_control_bone in target_object.pose.bones):
-							cb = target_object.pose.bones[Jb.jiggle_control_bone]
-							target_matrix = cb.matrix
-							if(cb.parent!=None):
-								target_matrix = cb.parent.matrix.inverted() @ target_matrix
+						if(target_object.type =='ARMATURE' and db.jiggle_control_bone in target_object.pose.bones):
+							control_pb = target_object.pose.bones[db.jiggle_control_bone]
+							target_matrix = control_pb.matrix
+							if(control_pb.parent != None):
+								target_matrix = control_pb.parent.matrix.inverted() @ target_matrix
 						
-						wb.cQ = target_matrix.to_quaternion().normalized()
-						wb.Kc = 1- pow(1-Jb.jiggle_control, 1.0/scene.jiggle.iterations)
+						jb.cQ = target_matrix.to_quaternion().normalized()
+						jb.Kc = 1- pow(1-db.jiggle_control, 1.0/scene.jiggle.iterations)
 					
-					bl2.append(wb) 
+					bl2.append(jb) 
 				else:
-					wb.w = 0
-					wb.X = wb.P = mpos(M)+maxis(M,1)*b.bone.length*0.5
-					wb.R = wb.Q = M.to_quaternion().normalized()
+					jb.w = 0
+					jb.X = jb.P = mpos(M)+maxis(M,1)*b.bone.length*0.5
+					jb.R = jb.Q = M.to_quaternion().normalized()
 					
-					M = ow @ b.matrix
+					M = arm_matrix @ b.matrix
 					
-					Jb = b.bone 
-					setq(Jb.jiggle_R, M.to_quaternion().normalized())
-					Jb.jiggle_V = Vector((0,0,0))
-					Jb.jiggle_P = mpos(M)+maxis(M,1)*b.bone.length*0.5
-					Jb.jiggle_W = Vector((0,0,0))
+					db = b.bone 
+					setq(db.jiggle_R, M.to_quaternion().normalized())
+					db.jiggle_V = Vector((0,0,0))
+					db.jiggle_P = mpos(M)+maxis(M,1)*b.bone.length*0.5
+					db.jiggle_W = Vector((0,0,0))
 			
 			for i in range(scene.jiggle.iterations):
 				#parent constraint
-				for wb in bl2:
-					b = wb.b
-					if(b.parent==None):
+				for jb in bl2:
+					db = jb.b.bone
+					if(db.parent != None):
 						continue
-					Jb = b.bone
-					locSpring(wb)
+					locSpring(jb)
 				#spring constraint
-				for wb in bl2:
-					b = wb.b
-					if(b.parent==None):
+				for jb in bl2:
+					db = jb.b.bone
+					if(db.parent != None):
 						continue
-					Jb = b.bone
-					quatSpring(wb, Jb.jiggle_rest if Jb.jiggle_use_custom_rest else wb.rest.to_quaternion().normalized())
-					if(wb.cQ!=None):
-						quatSpring(wb, wb.cQ, wb.Kc)
+					quatSpring(jb, db.jiggle_rest if db.jiggle_use_custom_rest else jb.rest.to_quaternion().normalized())
+					if(jb.cQ != None):
+						quatSpring(jb, jb.cQ, jb.Kc)
 
-			for wb in bl2:
-				b = wb.b
-				Jb = b.bone 
+			for jb in bl2:
+				db = jb.b.bone
 				
-				wb.Q = wb.Q.normalized()
-				m = wb.Q.to_matrix()
+				jb.Q = jb.Q.normalized()
+				m = jb.Q.to_matrix()
 				for i in range(3):
 					for j in range(3):
-						wb.M[i][j] = m[i][j]*scale
-				wb.M[3][3]=1
+						jb.M[i][j] = m[i][j]*scale
+				jb.M[3][3]=1
 
-				Jb.jiggle_V = (wb.P - wb.X)/dt
-				Jb.jiggle_P = wb.P.copy()
-				qv = wb.Q @ Jb.jiggle_R.conjugated() 
-				Jb.jiggle_W = Vector((qv.x,qv.y,qv.z))*(2/dt)
-				Jb.jiggle_R = wb.Q
+				db.jiggle_V = (jb.P - jb.X)/dt
+				db.jiggle_P = jb.P.copy()
+				qv = jb.Q @ db.jiggle_R.conjugated() 
+				db.jiggle_W = Vector((qv.x,qv.y,qv.z))*(2/dt)
+				db.jiggle_R = jb.Q
 
-				cp = Jb.jiggle_P - maxis(wb.M,1)*b.bone.length*0.5
+				cp = db.jiggle_P - maxis(jb.M,1) * db.length * 0.5	# TODO: What's this?
 			
-				wb.M[0][3]= cp[0]
-				wb.M[1][3]= cp[1]
-				wb.M[2][3]= cp[2]
+				jb.M[0][3] = cp[0]
+				jb.M[1][3] = cp[1]
+				jb.M[2][3] = cp[2]
 
-			for wb in bl2:
-				b = wb.b
-				pM = ow
-				if(b.parent!=None):
-					pM = wb.parent.M
-				mb = (pM @ wb.rest_base).inverted() @ wb.M
+			for jb in bl2:
+				pb = jb.b
+				pM = arm_matrix
+				if(pb.parent != None):
+					pM = jb.parent.M
+				mb = (pM @ jb.rest_base).inverted() @ jb.M
 
-				b.matrix_basis = mb
+				pb.matrix_basis = mb
 
 	scene.jiggle.last_frame+= 1
  
-@persistent
-def update_post(scene, tm = False):
-	global iters 
-	global dt
-	global ctx
-	global cc
-
-#backing = False
+#baking = False
 @persistent
 def update(scene, tm = False):
-	global iters 
-	global dt
-	global ctx
-	global cc 
-	dt = 1.0/(scene.render.fps*scene.jiggle.sub_steps)
-	if(not (scene.jiggle.test_mode or tm)): # or (backing and not tm)):
+	dt = 1.0/(scene.render.fps * scene.jiggle.sub_steps)
+	if(not (scene.jiggle.test_mode or tm)): # or (baking and not tm)):
 		return 
 	step(scene)
 
 def bake(bake_all):
 	print("baking " + ("all" if(bake_all) else "selected") + "...")
-	global ctx
-	# global backing 
+	# global baking 
 	
 	scene = bpy.context.scene
 	scene.frame_set(scene.frame_start)
