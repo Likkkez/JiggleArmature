@@ -30,18 +30,33 @@
 
 # Based on the Position Based Dynamics paper by Müller et al. http://matthias-mueller-fischer.ch/publications/posBasedDyn.pdf
 
-# TODO: re-initialize bones when the jiggle bone checkbox is enabled.
-# Investigate what initializing bones does, and see if it can be made automatic (Other current use cases for it is when an armature is linked or a bone is deleted, you need to manually re-initialize)
+# TODO
 
+### REFACTOR ###
 # Rename classes, functions, variables to be consistent, verbose and descriptive.
-# Merge jiggle_hierarchy_bone and jiggle_hierarchy_armature classes into JiggleBone class.
-# Move floating functions into classes.
+# Organize functions and shit properly.
+# 	Split into separate files: __init__, operators, jiggle, utils, ui.
+#	__init__
+#	operators
+# 		put bake() inside JARM_OT_bake
+#		put initialize_bones() inside JARM_OT_init_bones
+#	utils
+#		Just slap all the floating utility functions so I don't have to constantly scroll past them.
+#	ui
+#		clean up armature panel UI (can probably deprecate eventually)
+#	jiggle (can find a better name)
+#		JiggleBone class and stuff related to it.
+# 			Pack all jiggle bone properties into a CollectionProperty (need a new JiggleProperties class) and append that to bpy.types.Bone.
+# 			Merge jiggle_hierarchy_bone and jiggle_hierarchy_armature classes into JiggleBone class.
+#			Let JiggleBones simulate themselves via step(). This would probably be quite tricky. But imo it would be a lot nicer.
+#				Then the scene would have a jiggle.step() which calles every armatures' jiggle.step() which calls each of its bones' jiggle.step().
+
+### FEATURES ###
+# Investigate what initializing bones does, and see if it can be made automatic (Other current use cases for it is when an armature is linked or a bone is deleted, you need to manually re-initialize)
 # If we can't deprecate the initialize operator, at least make sure to run it whenever a jiggle bone toggle is changed.
 # The whole idea of having to enable the jiggle in the scene, then in the armature, then in the bone, seems crazy to me. We should be able to simply enable it in the bone, and have some settings for it in the scene.
 # There should be an option to simply use the scene's framerate as the simulation framerate.
-# Pack all jiggle bone properties into a CollectionProperty (need a new JiggleProperties class)
-# See if we can't avoid using ugly global variables.
-# Split into separate files: __init__, operators, physics, utils, ui.
+# Let jiggle bones inherit scale of their parent bone, just like they inherit scale of the armature object.
 
 bl_info = {
 	"name": "Jiggle Armature",
