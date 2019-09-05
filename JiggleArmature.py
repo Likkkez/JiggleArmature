@@ -34,7 +34,10 @@
 # Investigate what initializing bones does, and see if it can be made automatic (Other current use cases for it is when an armature is linked or a bone is deleted, you need to manually re-initialize)
 
 # Rename classes, functions, variables to be consistent, verbose and descriptive.
+# Move floating functions into classes.
 # If we can't deprecate the initialize operator, at least make sure to run it whenever a jiggle bone toggle is changed.
+# The whole idea of having to enable the jiggle in the scene, then in the armature, then in the bone, seems crazy to me. We should be able to simply enable it in the bone, and have some settings for it in the scene.
+# There should be an option to simply use the scene's framerate as the simulation framerate.
 # Pack all jiggle bone properties into a CollectionProperty (need a new JiggleProperties class)
 # See if we can't avoid using ugly global variables.
 # Split into separate files: __init__, operators, physics, utils, ui.
@@ -60,7 +63,7 @@ from bpy_extras.io_utils import ImportHelper, ExportHelper
 from bpy.app.handlers import persistent
 from bpy.props import *
 
-class JiggleArmature(bpy.types.PropertyGroup): 
+class JiggleArmature(bpy.types.PropertyGroup):
 	enabled: BoolProperty(default=True)
 	fps: FloatProperty(name = "simulation fps", default = 24)
 	time_acc: FloatProperty(default = 0.0)
@@ -72,7 +75,7 @@ class JiggleScene(bpy.types.PropertyGroup):
 		name = "Iterations", 
 		description="Higher values result in slower but higher quality simulation", 
 		min=1, 
-		default = 4) 
+		default = 4)
 	last_frame: IntProperty()
 
 class JARM_PT_armature(bpy.types.Panel):
@@ -284,12 +287,12 @@ def computeMatrixK(connector,invMass,x,inertiaInverseW,K):
 	else:
 		K.zero()
 
-class JB:
-	def __init__(self, b,M,p):
-		self.M = M.copy()
-		self.length = b.bone.length*maxis(M,0).length 
-		self.b = b
-		self.parent = p
+class JiggleBone:
+	def __init__(self, pbone, matrix, parent):
+		self.M = matrix.copy()
+		self.length = pbone.bone.length*maxis(matrix,0).length 
+		self.b = pbone
+		self.parent = parent
 		self.rest = None
 		self.rest_w = None
 		self.w = 0
@@ -307,11 +310,12 @@ class JB:
 		rot = self.Q.to_matrix()
 		self.iIw = rot@self.iI @ rot.transposed()
  
-def propB(ow,b, l, p):
-	j = JB(b.p_bone, ow @ b.p_bone.matrix, p)
-	l.append(j)
-	for c in b.children:
-		propB(ow,c,l,j)
+def propB(ow, armature, jiggle_hierarchy, lst, parent):
+	pbone = jiggle_hierarchy.p_bone
+	jiggle_bone = JiggleBone(pbone, ow @ pbone.matrix, parent)
+	lst.append(jiggle_bone)
+	for c in jiggle_hierarchy.children:
+		propB(ow, armature, c, lst, jiggle_bone)
 	
 def maxis(M,i):
 	return Vector((M[0][i],M[1][i],M[2][i]))
@@ -514,7 +518,6 @@ def quatSpringGradient2(Q0,Q1,r):
 	return c, dQ0x,dQ0y,dQ0z,dQ0w,dQ1x,dQ1y,dQ1z,dQ1w
 	
 def quatSpring(Jb,r=None,k=None):
-	
 	Q0 = Jb.parent.Q
 	Q1 = Jb.Q
 	w0 = Jb.parent.w
@@ -554,14 +557,14 @@ def quatSpring(Jb,r=None,k=None):
 		Q1.z+=dQ1z*s*w1*k
 		Q1.w+=dQ1w*s*w1*k
 		Jb.Q = Q1.normalized()
-		
+
 jiggle_arm_list=[]
 
-class jiggle_hierarchy_bones():
-	def __init__(self,arm_o, bone):
-		self.bone=bone
-		self.p_bone=arm_o.pose.bones.get(bone.name)
-		self.children=[]
+class jiggle_hierarchy_bones:
+	def __init__(self, arm_o, bone):
+		self.bone = bone
+		self.p_bone = arm_o.pose.bones.get(bone.name)
+		self.children = []
 	
 class jiggle_hierarchy_armatures: 
 	def __init__(self):
@@ -572,22 +575,23 @@ class jiggle_hierarchy_armatures:
 def find_children(arm,bone_jiggle):
 	for b in bone_jiggle.bone.children:
 		if b.jiggle_enabled:
-			x=jiggle_hierarchy_bones(arm,b)
+			x=jiggle_hierarchy_bones(arm, b)
 			bone_jiggle.children.append(x)
 			find_children(arm,x)
 
-def findarmatures(scene):
+@persistent
+def initialize_bones(scene):
 	global jiggle_arm_list
 	jiggle_arm_list.clear()
 	for o in scene.objects:
 		if(o.type == 'ARMATURE' and o.data.jiggle.enabled): 
-			x=jiggle_hierarchy_armatures()
-			x.arm=o
+			x = jiggle_hierarchy_armatures()
+			x.arm = o
 			jiggle_arm_list.append(x)
 			for b in o.data.bones:
-				if b.parent and (b.parent not in x.bones_used):
-					if b.jiggle_enabled and (not b.parent.jiggle_enabled):
-						bc=jiggle_hierarchy_bones(o,b.parent)
+				if(b.parent and b.parent not in x.bones_used):
+					if(b.jiggle_enabled and not b.parent.jiggle_enabled):
+						bc = jiggle_hierarchy_bones(o,b.parent)
 						x.bones_used.append(b.parent)
 						find_children(o,bc)
 						x.bones_root.append(bc)
@@ -601,36 +605,36 @@ def step(scene):
 	global jiggle_arm_list
 	dt = 1.0/(scene.render.fps)
 
-	for o2 in jiggle_arm_list:
-		o=o2.arm
-		arm = o.data
-		ow = o.matrix_world.copy()
+	for jiggle_arm in jiggle_arm_list:
+		arm_obj = jiggle_arm.arm
+		arm_data = arm_obj.data
+		ow = arm_obj.matrix_world.copy()
 		scale =maxis(ow,0).length 
 		
 		iow = ow.inverted()
 		iow3 = ow.to_3x3().inverted()
 		
 		i=0
-		arm.jiggle.time_acc+= dt* arm.jiggle.fps 
-		while arm.jiggle.time_acc > 1:
-			arm.jiggle.time_acc-=1 
+		arm_data.jiggle.time_acc+= dt* arm_data.jiggle.fps 
+		while arm_data.jiggle.time_acc > 1:
+			arm_data.jiggle.time_acc-=1 
 			
-			bl = []
+			bone_list = []
 					
-			for b in o2.bones_root:
-					#if(b.parent==None):
-				propB(ow,b,bl,None)
+			for jb in jiggle_arm.bones_root:
+				propB(ow, arm_obj, jb, bone_list, None)
+			
 			hooks= []
 			bl2 = []
-			for wb in bl:
+			for wb in bone_list:
 				b = wb.b
 				wb.rest_w = b.bone.matrix_local.copy()
 				saxis(wb.rest_w,3, maxis(wb.rest_w,3)*scale)
 				saxis(wb.rest_w,3, maxis(wb.rest_w,3)+maxis(wb.rest_w,1)*b.bone.length*0.5*scale)
 				
-			for wb in bl:
+			for wb in bone_list:
 				b = wb.b
-				crest = b 
+				crest = b
 				
 				wb.restW = b.bone.matrix_local.copy() * scale 
 				saxis(wb.restW,3, maxis(wb.restW,3)*scale)
@@ -813,10 +817,6 @@ def bake(bake_all):
 				if(not m):
 					bpy.ops.object.posemode_toggle() 
 	scene.jiggle.test_mode = ltm
-	
-@persistent
-def initialize_bones(dummy):
-	findarmatures(bpy.context.scene)
 
 class JARM_OT_bake(bpy.types.Operator):
 	"""Bake jiggle bone motion to keyframes"""
@@ -835,7 +835,7 @@ class JARM_OT_init_bones(bpy.types.Operator):
 	bl_label = "Initialize Jiggle Bones"
 
 	def execute(self, context):
-		initialize_bones('dummy')
+		initialize_bones(context.scene)
 		return {'FINISHED'}
 
 classes = ( 
