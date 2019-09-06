@@ -79,6 +79,7 @@ from bpy.types import Menu, Panel, Operator
 from bpy_extras.io_utils import ImportHelper, ExportHelper
 from bpy.app.handlers import persistent
 from bpy.props import *
+from collections import defaultdict
 
 class JiggleArmature(bpy.types.PropertyGroup):
 	enabled: BoolProperty(default=True)
@@ -295,12 +296,12 @@ class JiggleBone:
 		rot = self.Q.to_matrix()
 		self.iIw = rot@self.iI @ rot.transposed()
 
-def get_jiggle_children(arm_matrix, pbone, lst, parent):
+def get_jiggle_children(arm_matrix, pbone, lst, parent, children_of_bone):
 	""" Recursive function to build a flat list of JiggleBone objects. """
 	jiggle_bone = JiggleBone(pbone, arm_matrix @ pbone.matrix, parent)
 	lst.append(jiggle_bone)
-	for c in pbone.children:
-		get_jiggle_children(arm_matrix, c, lst, jiggle_bone)
+	for c in children_of_bone[pbone]:
+		get_jiggle_children(arm_matrix, c, lst, jiggle_bone, children_of_bone)
 
 def maxis(M,i):
 	return Vector((M[0][i],M[1][i],M[2][i]))
@@ -308,8 +309,6 @@ def saxis(M,i,v):
 	M[0][i] = v[0]
 	M[1][i] = v[1]
 	M[2][i] = v[2]
-def mpos(M):
-	return Vector((M[0][3],M[1][3],M[2][3]))
 def qadd(a,b):
 	return Quaternion((a[0]+b[0],a[1]+b[1],a[2]+b[2],a[3]+b[3]))
 
@@ -528,8 +527,11 @@ def step(scene):
 		arm_data = arm_obj.data
 		arm_matrix = arm_obj.matrix_world.copy()
 		scale =maxis(arm_matrix,0).length
-
-		iow = arm_matrix.inverted()
+		
+		children_of_bone = defaultdict(list)
+		for bone in arm_obj.pose.bones:
+			if(bone.parent):
+				children_of_bone[bone.parent].append(bone)
 
 		arm_data.jiggle.time_acc += dt * arm_data.jiggle.fps
 		while arm_data.jiggle.time_acc > 1:
@@ -538,7 +540,7 @@ def step(scene):
 			jiggle_bones = []	# List that will store our JiggleBone objects. (We create a JiggleBone for every bone, not just jigglebones... which makes no sense, so TODO)
 			for b in arm_obj.pose.bones:
 				if(b.parent==None):
-					get_jiggle_children(arm_matrix, b, jiggle_bones, None)
+					get_jiggle_children(arm_matrix, b, jiggle_bones, None, children_of_bone)
 
 			bl2 = []	# TODO How does this differ from jiggle_bones?
 			for jb in jiggle_bones:
@@ -604,7 +606,7 @@ def step(scene):
 					bl2.append(jb)
 				else:
 					jb.w = 0
-					jb.X = jb.P = mpos(M)+maxis(M,1)*b.bone.length*0.5
+					jb.X = jb.P = M.translation + maxis(M, 1) * b.bone.length * 0.5
 					jb.R = jb.Q = M.to_quaternion().normalized()
 
 					M = arm_matrix @ b.matrix
@@ -612,7 +614,7 @@ def step(scene):
 					db = b.bone
 					setq(db.jiggle_R, M.to_quaternion().normalized())
 					db.jiggle_V = Vector((0,0,0))
-					db.jiggle_P = mpos(M) + maxis(M, 1) * b.bone.length * 0.5
+					db.jiggle_P = M.translation + maxis(M, 1) * b.bone.length * 0.5
 					db.jiggle_W = Vector((0,0,0))
 
 			for i in range(scene.jiggle.iterations):
@@ -684,7 +686,7 @@ def reset_JB():
 					db = b.bone
 					setq(db.jiggle_R, M.to_quaternion().normalized())
 					db.jiggle_V = Vector((0,0,0))
-					db.jiggle_P = mpos(M)+maxis(M,1)*b.bone.length*0.5
+					db.jiggle_P = M.translation + maxis(M, 1) * b.bone.length * 0.5
 					db.jiggle_W = Vector((0,0,0))
 
 def bake(bake_all):
