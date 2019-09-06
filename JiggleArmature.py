@@ -334,6 +334,47 @@ class JiggleBone:
 			otQ.z = ot[2]
 			otQ.w = 0
 			self.Q = qadd(self.Q, otQ @ self.Q*0.5).normalized()
+	
+	def quatSpring(self, r=None, k=None):
+		Q0 = self.parent.Q
+		Q1 = self.Q
+		w0 = self.parent.w
+		w1 = self.w
+		if(r==None):
+			r = self.rest.to_quaternion()
+		if(k==None):
+			k = self.k
+
+		ra = Q0.inverted() @ Q1
+		if ra.dot(r) < 0:
+			r = -r
+
+		c, dQ0x,dQ0y,dQ0z,dQ0w,dQ1x,dQ1y,dQ1z,dQ1w = quatSpringGradient2(Q0,Q1,r)
+
+		div = dQ0x*dQ0x*w0 + \
+			dQ0y*dQ0y*w0 + \
+			dQ0z*dQ0z*w0 + \
+			dQ0w*dQ0w*w0 + \
+			dQ1x*dQ1x*w1 + \
+			dQ1y*dQ1y*w1 + \
+			dQ1z*dQ1z*w1 + \
+			dQ1w*dQ1w*w1
+
+		if(div> 1e-8):
+			s = -c/div
+			if(w0>0.0):
+
+				Q0.x+=dQ0x*s*w0*k
+				Q0.y+=dQ0y*s*w0*k
+				Q0.z+=dQ0z*s*w0*k
+				Q0.w+=dQ0w*s*w0*k
+				self.parent.Q = Q0.normalized()
+
+			Q1.x+=dQ1x*s*w1*k
+			Q1.y+=dQ1y*s*w1*k
+			Q1.z+=dQ1z*s*w1*k
+			Q1.w+=dQ1w*s*w1*k
+			self.Q = Q1.normalized()
 
 def get_jiggle_children(arm_matrix, pbone, lst, parent, children_of_bone):
 	""" Recursive function to build a flat list of JiggleBone objects. """
@@ -472,47 +513,6 @@ def quatSpringGradient2(Q0, Q1, r):
 
 	return c, dQ0x,dQ0y,dQ0z,dQ0w,dQ1x,dQ1y,dQ1z,dQ1w
 
-def quatSpring(Jb, r=None, k=None):
-	Q0 = Jb.parent.Q
-	Q1 = Jb.Q
-	w0 = Jb.parent.w
-	w1 = Jb.w
-	if(r==None):
-		r = Jb.rest.to_quaternion()
-	if(k==None):
-		k = Jb.k
-
-	ra = Q0.inverted() @ Q1
-	if ra.dot(r) < 0:
-		r = -r
-
-	c, dQ0x,dQ0y,dQ0z,dQ0w,dQ1x,dQ1y,dQ1z,dQ1w = quatSpringGradient2(Q0,Q1,r)
-
-	div = dQ0x*dQ0x*w0 + \
-		dQ0y*dQ0y*w0 + \
-		dQ0z*dQ0z*w0 + \
-		dQ0w*dQ0w*w0 + \
-		dQ1x*dQ1x*w1 + \
-		dQ1y*dQ1y*w1 + \
-		dQ1z*dQ1z*w1 + \
-		dQ1w*dQ1w*w1
-
-	if(div> 1e-8):
-		s = -c/div
-		if(w0>0.0):
-
-			Q0.x+=dQ0x*s*w0*k
-			Q0.y+=dQ0y*s*w0*k
-			Q0.z+=dQ0z*s*w0*k
-			Q0.w+=dQ0w*s*w0*k
-			Jb.parent.Q = Q0.normalized()
-
-		Q1.x+=dQ1x*s*w1*k
-		Q1.y+=dQ1y*s*w1*k
-		Q1.z+=dQ1z*s*w1*k
-		Q1.w+=dQ1w*s*w1*k
-		Jb.Q = Q1.normalized()
-
 def step(scene):
 	dt = 1.0/(scene.render.fps)
 
@@ -621,9 +621,9 @@ def step(scene):
 				for jb in bl2:
 					if(jb.b.parent==None):
 						continue
-					quatSpring(jb, db.jiggle_rest if db.jiggle_use_custom_rest else jb.rest.to_quaternion().normalized())
+					jb.quatSpring(db.jiggle_rest if db.jiggle_use_custom_rest else jb.rest.to_quaternion().normalized())
 					if(jb.cQ):
-						quatSpring(jb, jb.cQ, jb.Kc)
+						jb.quatSpring(jb.cQ, jb.Kc)
 
 			for jb in bl2:
 				db = jb.b.bone
