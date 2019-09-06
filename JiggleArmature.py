@@ -340,40 +340,22 @@ class JiggleBone:
 		a = v[0]
 		b = v[1]
 		c = v[2]
-		if(True):
-			j11 = inertiaInverseW[0][0]
-			j12 = inertiaInverseW[1][0]
-			j13 = inertiaInverseW[2][0]
-			j22 = inertiaInverseW[1][1]
-			j23 = inertiaInverseW[2][1]
-			j33 = inertiaInverseW[2][2]
+		j11 = inertiaInverseW[0][0]
+		j12 = inertiaInverseW[1][0]
+		j13 = inertiaInverseW[2][0]
+		j22 = inertiaInverseW[1][1]
+		j23 = inertiaInverseW[2][1]
+		j33 = inertiaInverseW[2][2]
 
-			K[0][0] = c*c*j22 - b*c*(j23 + j23) + b*b*j33 + invMass
-			K[1][0] = -(c*c*j12) + a*c*j23 + b*c*j13 - a*b*j33
-			K[2][0] = b*c*j12 - a*c*j22 - b*b*j13 + a*b*j23
-			K[0][1] = K[1][0]
-			K[1][1] = c*c*j11 - a*c*(j13 + j13) + a*a*j33 + invMass
-			K[2][1] = -(b*c*j11) + a*c*j12 + a*b*j13 - a*a*j23
-			K[0][2] = K[2][0]
-			K[1][2] = K[2][1]
-			K[2][2] = b*b*j11 - a*b*(j12 + j12) + a*a*j22 + invMass
-		else:
-			j11 = inertiaInverseW[0][0]
-			j12 = inertiaInverseW[0][1]
-			j13 = inertiaInverseW[0][2]
-			j22 = inertiaInverseW[1][1]
-			j23 = inertiaInverseW[1][2]
-			j33 = inertiaInverseW[2][2]
-
-			K[0][0] = c*c*j22 - b*c*(j23 + j23) + b*b*j33 + invMass
-			K[0][1] = -(c*c*j12) + a*c*j23 + b*c*j13 - a*b*j33
-			K[0][2] = b*c*j12 - a*c*j22 - b*b*j13 + a*b*j23
-			K[1][0] = K[0][1]
-			K[1][1] = c*c*j11 - a*c*(j13 + j13) + a*a*j33 + invMass
-			K[1][2] = -(b*c*j11) + a*c*j12 + a*b*j13 - a*a*j23
-			K[2][0] = K[0][2]
-			K[2][1] = K[1][2]
-			K[2][2] = b*b*j11 - a*b*(j12 + j12) + a*a*j22 + invMass
+		K[0][0] = c*c*j22 - b*c*(j23 + j23) + b*b*j33 + invMass
+		K[1][0] = -(c*c*j12) + a*c*j23 + b*c*j13 - a*b*j33
+		K[2][0] = b*c*j12 - a*c*j22 - b*b*j13 + a*b*j23
+		K[0][1] = K[1][0]
+		K[1][1] = c*c*j11 - a*c*(j13 + j13) + a*a*j33 + invMass
+		K[2][1] = -(b*c*j11) + a*c*j12 + a*b*j13 - a*a*j23
+		K[0][2] = K[2][0]
+		K[1][2] = K[2][1]
+		K[2][2] = b*b*j11 - a*b*(j12 + j12) + a*a*j22 + invMass
 			
 		return K
 
