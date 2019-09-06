@@ -651,7 +651,7 @@ def step(scene):
 					qv.z = db.jiggle_W[2]
 					qv.w = 0
 
-					jb.Q = qadd(jb.Q, qv @ jb.Q * dt).normalized() #removed *0.5 after dt to improve dampning range
+					jb.Q = qadd(jb.Q, qv @ jb.Q * dt * 0.5).normalized() #removing * 0.5 seems to make single bone jiggle better but breaks arrays of bones
 
 					jb.P = jb.X + db.jiggle_V * dt
 					jb.computeI()
