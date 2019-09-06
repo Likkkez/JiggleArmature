@@ -52,11 +52,11 @@
 #				Then the scene would have a jiggle.step() which calles every armatures' jiggle.step() which calls each of its bones' jiggle.step().
 
 ### FEATURES ###
-# Investigate what initializing bones does, and see if it can be made automatic (Other current use cases for it is when an armature is linked or a bone is deleted, you need to manually re-initialize)
-# If we can't deprecate the initialize operator, at least make sure to run it whenever a jiggle bone toggle is changed.
 # The whole idea of having to enable the jiggle in the scene, then in the armature, then in the bone, seems crazy to me. We should be able to simply enable it in the bone, and have some settings for it in the scene.
-# There should be an option to simply use the scene's framerate as the simulation framerate.
+# There should be an option to simply use the scene's framerate as the simulation framerate. In this case, the simulation would be expected to run "faster" - That is to say, we shouldn't compensate with the assumption that 1 second is always 24 frames. 1 second is always fps frames.
 # Let jiggle bones inherit scale of their parent bone, just like they inherit scale of the armature object.
+# Would be nice to clean up the physics code so we could actually make changes to it and know wtf is actually happening.
+
 
 bl_info = {
 	"name": "Jiggle Armature",
@@ -134,21 +134,6 @@ class JARM_PT_scene(bpy.types.Panel):
 		col.operator("jiggle.initialize", text="Initialize Bones")
 		col.operator("jiggle.bake", text="Bake Selected").a = False
 		col.operator("jiggle.bake", text="Bake All").a = True
-
-inop = False
-def funp(prop):
-	def f(self,context):
-		global inop
-		if(inop):
-			return
-		inop = True
-		b = context.bone
-		o = context.object
-		for b2 in o.data.bones:
-			if(b2.select):
-				setattr(b2, prop, getattr(b,prop))
-		inop = False
-	return f
 
 def setq(om, m):
 	for i in range(4):
@@ -228,7 +213,7 @@ class JARM_PT_bone(bpy.types.Panel):
 				col.label(text= "warning: jibblebones without parent will fall",icon='COLOR_RED')
 
 #adapted from https://github.com/InteractiveComputerGraphics/PositionBasedDynamics/blob/master/PositionBasedDynamics/PositionBasedRigidBodyDynamics.cpp
-def computeMatrixK(connector,invMass,x,inertiaInverseW,K):
+def computeMatrixK(connector, invMass, x, inertiaInverseW, K):
 	if (invMass != 0.0):
 		v = connector - x
 		a = v[0]
@@ -367,7 +352,7 @@ def locSpring(jb):
 		jb.Q = qadd(jb.Q, otQ @ jb.Q*0.5).normalized()
 
 #NOTE: the following gradient computation implementation was automatically generated, if possible, it should be change for a clearer implementation
-def quatSpringGradient2(Q0,Q1,r):
+def quatSpringGradient2(Q0, Q1, r):
 	"""Returns the gradient of C = |Q0*r - Q1|^2 wrt Q0 and Q1"""
 	Q0x = Q0.x
 	Q0y = Q0.y
@@ -478,7 +463,7 @@ def quatSpringGradient2(Q0,Q1,r):
 
 	return c, dQ0x,dQ0y,dQ0z,dQ0w,dQ1x,dQ1y,dQ1z,dQ1w
 
-def quatSpring(Jb,r=None,k=None):
+def quatSpring(Jb, r=None, k=None):
 	Q0 = Jb.parent.Q
 	Q1 = Jb.Q
 	w0 = Jb.parent.w
@@ -753,36 +738,30 @@ def register():
 	bpy.types.Bone.jiggle_enabled = BoolProperty(
 		name = "Enable Jiggle",
 		description = "Enable Jiggle Physics",
-		default = False,
-		update = funp("jiggle_enabled"))
+		default = False)
 	bpy.types.Bone.jiggle_Kld = FloatProperty(
 		name = "Linear Damping",
 		min = 0.0,
 		max = 1.0,
-		default = 0.01,
-		update = funp("jiggle_Kld"))
+		default = 0.01)
 	bpy.types.Bone.jiggle_Kd = FloatProperty(
 		name = "Angular Damping",
 		min = 0.0,
 		max = 1.0,
-		default = 0.01,
-		update = funp("jiggle_Kd"))
+		default = 0.01)
 	bpy.types.Bone.jiggle_Ks = FloatProperty(
 		name = "Stiffness",
 		min = 0.0,
 		max = 1.0,
-		default = 0.8,
-		update = funp("jiggle_Ks"))
+		default = 0.8)
 	bpy.types.Bone.gravity_multiplier = FloatProperty(
 		name = "Gravity Multiplier",
 		min = 0.0,
-		default = 1.0,
-		update = funp("gravity_multiplier"))
+		default = 1.0)
 	bpy.types.Bone.jiggle_mass = FloatProperty(
 		name = "Mass",
 		min = 0.0001,
-		default = 1.0,
-		update = funp("jiggle_mass"))
+		default = 1.0)
 	bpy.types.Bone.jiggle_R = FloatVectorProperty(
 		name = "Rotation",
 		size = 4,
@@ -794,8 +773,7 @@ def register():
 
 	bpy.types.Bone.jiggle_use_custom_rest =BoolProperty(
 		name = "Use Custom Rest Pose",
-		default = False,
-		update = funp("jiggle_use_custom_rest"))
+		default = False)
 	bpy.types.Bone.jiggle_rest = FloatVectorProperty(
 		name = "Rotation",
 		size = 4,
@@ -804,8 +782,7 @@ def register():
 		name = "Control",
 		min = 0.0,
 		max = 1.0,
-		default = 1,
-		update = funp("jiggle_control"))
+		default = 1)
 	bpy.types.Bone.jiggle_control_object = StringProperty(name = "Control Object")
 	bpy.types.Bone.jiggle_control_bone = StringProperty(name = "Control Bone")
 
