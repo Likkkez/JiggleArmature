@@ -154,7 +154,6 @@ def setq(om, m):
 	for i in range(4):
 		om[i]= m[i]
 
-
 class JARM_OT_set_rest(bpy.types.Operator):
 	"""Set jiggle rest pose"""
 	bl_idname = "jiggle.set_rest"
@@ -228,12 +227,6 @@ class JARM_PT_bone(bpy.types.Panel):
 			col.operator("jiggle.set_rest")
 			if(bon.parent==None):
 				col.label(text= "warning: jibblebones without parent will fall",icon='COLOR_RED')
-
-def centerM(jhb, l):
-	ax = maxis(jhb, 1).normalized()
-	jhb[0][3] += ax[0] * l * 0.5
-	jhb[1][3] += ax[1] * l * 0.5
-	jhb[2][3] += ax[2] * l * 0.5
 
 #adapted from https://github.com/InteractiveComputerGraphics/PositionBasedDynamics/blob/master/PositionBasedDynamics/PositionBasedRigidBodyDynamics.cpp
 def computeMatrixK(connector,invMass,x,inertiaInverseW,K):
@@ -319,29 +312,8 @@ def saxis(M,i,v):
 	M[2][i] = v[2]
 def mpos(M):
 	return Vector((M[0][3],M[1][3],M[2][3]))
-def ort(M):
-	a = M[0]
-	b = M[1]
-	c = M[2]
-	a = a.normalized()
-	b = (b- a*a.dot(b)).normalized()
-	c = (c - a*a.dot(c) - b*b.dot(c)).normalized()
-	M = Matrix.Identity(3)
-	M[0] = a
-	M[1] = b
-	M[2] = c
-	return M
 def qadd(a,b):
 	return Quaternion((a[0]+b[0],a[1]+b[1],a[2]+b[2],a[3]+b[3]))
-def qadd2(a,b):
-	a.x+=b.x
-	a.y+=b.y
-	a.z+=b.z
-	a.w+=b.w
-
-def normR(m):
-	for i in range(3):
-		saxis(m,i, maxis(m,i).normalized())
 
 K1 = Matrix().to_3x3()
 K2 = Matrix().to_3x3()
@@ -550,8 +522,6 @@ def quatSpring(Jb,r=None,k=None):
 		Q1.w+=dQ1w*s*w1*k
 		Jb.Q = Q1.normalized()
 
-
-
 def step(scene):
 	dt = 1.0/(scene.render.fps  / scene.render.fps_base)
 	for arm_obj in scene.objects:
@@ -701,7 +671,6 @@ def update(scene, tm = False):
 		return
 	step(scene)
 
-
 def reset_JB():
 	scene = bpy.context.scene
 	for o in scene.objects:
@@ -721,14 +690,12 @@ def reset_JB():
 					Jb.jiggle_P = mpos(M)+maxis(M,1)*b.bone.length*0.5
 					Jb.jiggle_W = Vector((0,0,0))
 
-
 def bake(bake_all):
 	print("baking " + ("all" if(bake_all) else "selected") + "...")
 	# global baking
 
 	scene = bpy.context.scene
 	scene.frame_set(scene.frame_start)
-
 
 	reset_JB()
 
@@ -761,7 +728,6 @@ class JARM_OT_bake(bpy.types.Operator):
 	def execute(self, context):
 		bake(self.a)
 		return {'FINISHED'}
-
 
 classes = (
 	JARM_PT_armature,
