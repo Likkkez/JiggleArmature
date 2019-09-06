@@ -212,53 +212,6 @@ class JARM_PT_bone(bpy.types.Panel):
 			if(bon.parent==None):
 				col.label(text= "warning: jibblebones without parent will fall",icon='COLOR_RED')
 
-#adapted from https://github.com/InteractiveComputerGraphics/PositionBasedDynamics/blob/master/PositionBasedDynamics/PositionBasedRigidBodyDynamics.cpp
-def computeMatrixK(connector, invMass, x, inertiaInverseW, K):
-	if (invMass != 0.0):
-		v = connector - x
-		a = v[0]
-		b = v[1]
-		c = v[2]
-		if(True):
-			j11 = inertiaInverseW[0][0]
-			j12 = inertiaInverseW[1][0]
-			j13 = inertiaInverseW[2][0]
-			j22 = inertiaInverseW[1][1]
-			j23 = inertiaInverseW[2][1]
-			j33 = inertiaInverseW[2][2]
-
-			K[0][0] = c*c*j22 - b*c*(j23 + j23) + b*b*j33 + invMass
-			K[1][0] = -(c*c*j12) + a*c*j23 + b*c*j13 - a*b*j33
-			K[2][0] = b*c*j12 - a*c*j22 - b*b*j13 + a*b*j23
-			K[0][1] = K[1][0]
-			K[1][1] = c*c*j11 - a*c*(j13 + j13) + a*a*j33 + invMass
-			K[2][1] = -(b*c*j11) + a*c*j12 + a*b*j13 - a*a*j23
-			K[0][2] = K[2][0]
-			K[1][2] = K[2][1]
-			K[2][2] = b*b*j11 - a*b*(j12 + j12) + a*a*j22 + invMass
-		else:
-			j11 = inertiaInverseW[0][0]
-			j12 = inertiaInverseW[0][1]
-			j13 = inertiaInverseW[0][2]
-			j22 = inertiaInverseW[1][1]
-			j23 = inertiaInverseW[1][2]
-			j33 = inertiaInverseW[2][2]
-
-			K[0][0] = c*c*j22 - b*c*(j23 + j23) + b*b*j33 + invMass
-			K[0][1] = -(c*c*j12) + a*c*j23 + b*c*j13 - a*b*j33
-			K[0][2] = b*c*j12 - a*c*j22 - b*b*j13 + a*b*j23
-			K[1][0] = K[0][1]
-			K[1][1] = c*c*j11 - a*c*(j13 + j13) + a*a*j33 + invMass
-			K[1][2] = -(b*c*j11) + a*c*j12 + a*b*j13 - a*a*j23
-			K[2][0] = K[0][2]
-			K[2][1] = K[1][2]
-			K[2][2] = b*b*j11 - a*b*(j12 + j12) + a*a*j22 + invMass
-	else:
-		K.zero()
-
-K1 = Matrix().to_3x3()
-K2 = Matrix().to_3x3()
-
 class JiggleBone:
 	def __init__(self, pbone, matrix, parent):
 		self.M = matrix.copy()
@@ -285,8 +238,6 @@ class JiggleBone:
 		self.iIw = rot@self.iI @ rot.transposed()
 	
 	def locSpring(self):
-		global K1
-		global K2
 
 		Q0 = self.parent.Q
 		Q1 = self.Q
@@ -305,8 +256,8 @@ class JiggleBone:
 		connector0 = self.parent.P+self.parent.Q @ v0
 		connector1 = self.P+self.Q @ Vector((0,-lf,0))
 
-		computeMatrixK(connector0, w0, P0, self.parent.iIw, K1)
-		computeMatrixK(connector1, w1, P1, self.iIw, K2)
+		K1 = self.computeMatrixK(connector0, w0, P0, self.parent.iIw)
+		K2 = self.computeMatrixK(connector1, w1, P1, self.iIw)
 
 		Kinv = (K1 + K2).inverted()
 
@@ -375,6 +326,56 @@ class JiggleBone:
 			Q1.z+=dQ1z*s*w1*k
 			Q1.w+=dQ1w*s*w1*k
 			self.Q = Q1.normalized()
+
+	@staticmethod
+	def computeMatrixK(connector, invMass, x, inertiaInverseW):
+		#adapted from https://github.com/InteractiveComputerGraphics/PositionBasedDynamics/blob/master/PositionBasedDynamics/PositionBasedRigidBodyDynamics.cpp
+		K = Matrix().to_3x3()
+
+		if (invMass == 0.0): 
+			K.zero()
+			return K
+
+		v = connector - x
+		a = v[0]
+		b = v[1]
+		c = v[2]
+		if(True):
+			j11 = inertiaInverseW[0][0]
+			j12 = inertiaInverseW[1][0]
+			j13 = inertiaInverseW[2][0]
+			j22 = inertiaInverseW[1][1]
+			j23 = inertiaInverseW[2][1]
+			j33 = inertiaInverseW[2][2]
+
+			K[0][0] = c*c*j22 - b*c*(j23 + j23) + b*b*j33 + invMass
+			K[1][0] = -(c*c*j12) + a*c*j23 + b*c*j13 - a*b*j33
+			K[2][0] = b*c*j12 - a*c*j22 - b*b*j13 + a*b*j23
+			K[0][1] = K[1][0]
+			K[1][1] = c*c*j11 - a*c*(j13 + j13) + a*a*j33 + invMass
+			K[2][1] = -(b*c*j11) + a*c*j12 + a*b*j13 - a*a*j23
+			K[0][2] = K[2][0]
+			K[1][2] = K[2][1]
+			K[2][2] = b*b*j11 - a*b*(j12 + j12) + a*a*j22 + invMass
+		else:
+			j11 = inertiaInverseW[0][0]
+			j12 = inertiaInverseW[0][1]
+			j13 = inertiaInverseW[0][2]
+			j22 = inertiaInverseW[1][1]
+			j23 = inertiaInverseW[1][2]
+			j33 = inertiaInverseW[2][2]
+
+			K[0][0] = c*c*j22 - b*c*(j23 + j23) + b*b*j33 + invMass
+			K[0][1] = -(c*c*j12) + a*c*j23 + b*c*j13 - a*b*j33
+			K[0][2] = b*c*j12 - a*c*j22 - b*b*j13 + a*b*j23
+			K[1][0] = K[0][1]
+			K[1][1] = c*c*j11 - a*c*(j13 + j13) + a*a*j33 + invMass
+			K[1][2] = -(b*c*j11) + a*c*j12 + a*b*j13 - a*a*j23
+			K[2][0] = K[0][2]
+			K[2][1] = K[1][2]
+			K[2][2] = b*b*j11 - a*b*(j12 + j12) + a*a*j22 + invMass
+			
+		return K
 
 def get_jiggle_children(arm_matrix, pbone, lst, parent, children_of_bone):
 	""" Recursive function to build a flat list of JiggleBone objects. """
