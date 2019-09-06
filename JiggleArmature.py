@@ -256,21 +256,24 @@ def computeMatrixK(connector, invMass, x, inertiaInverseW, K):
 	else:
 		K.zero()
 
+K1 = Matrix().to_3x3()
+K2 = Matrix().to_3x3()
+
 class JiggleBone:
 	def __init__(self, pbone, matrix, parent):
 		self.M = matrix.copy()
 		self.length = pbone.bone.length*maxis(matrix,0).length
 		self.b = pbone
 		self.parent = parent	# Type: JiggleBone
-		self.rest = None
-		self.rest_w = None
-		self.w = 0
-		self.Kc = 0
-		self.cQ = None
-		self.X = None
-		self.P = None
-		self.R = None
-		self.Q = None
+		self.rest = None		# Type: Matrix
+		self.rest_w = None		# Type: Matrix
+		self.w = 0				# Type: Float - Inverse of mass?
+		self.Kc = 0				# Type: Float - ?
+		self.cQ = None			# Type: Quaternion
+		self.X = None			# Type: Float
+		self.P = None			# Type: Float
+		self.R = None			# Type: Float
+		self.Q = None			# Type: Float
 		self.iI = Matrix.Identity(3) #first naive approach
 		self.iIw = self.iI
 
@@ -280,6 +283,57 @@ class JiggleBone:
 	def updateIW(self):
 		rot = self.Q.to_matrix()
 		self.iIw = rot@self.iI @ rot.transposed()
+	
+	def locSpring(self):
+		global K1
+		global K2
+
+		Q0 = self.parent.Q
+		Q1 = self.Q
+		w0 = self.parent.w
+		w1 = self.w
+
+		v0 = self.rest_p
+
+		P0 = self.parent.P
+		P1 = self.P
+		lf = self.l*0.5
+
+		self.updateIW()
+		self.parent.updateIW()
+
+		connector0 = self.parent.P+self.parent.Q @ v0
+		connector1 = self.P+self.Q @ Vector((0,-lf,0))
+
+		computeMatrixK(connector0, w0, P0, self.parent.iIw, K1)
+		computeMatrixK(connector1, w1, P1, self.iIw, K2)
+
+		Kinv = (K1 + K2).inverted()
+
+		pt = Kinv @ (connector1 - connector0)
+		if (w0 != 0.0):
+			r0 = connector0 - P0
+			self.parent.P += w0*pt
+			ot = (self.parent.iIw @ (r0.cross(pt)))
+
+			otQ = Quaternion()
+			otQ.x =ot[0]
+			otQ.y = ot[1]
+			otQ.z = ot[2]
+			otQ.w = 0
+			self.parent.Q = qadd(self.parent.Q, otQ @ self.parent.Q*0.5).normalized()
+
+		if (w1 != 0.0):
+			r1 = connector1 - P1
+			self.P += -w1*pt
+			ot = (self.iIw @ (r1.cross(-pt)))
+
+			otQ = Quaternion()
+			otQ.x =ot[0]
+			otQ.y = ot[1]
+			otQ.z = ot[2]
+			otQ.w = 0
+			self.Q = qadd(self.Q, otQ @ self.Q*0.5).normalized()
 
 def get_jiggle_children(arm_matrix, pbone, lst, parent, children_of_bone):
 	""" Recursive function to build a flat list of JiggleBone objects. """
@@ -288,68 +342,23 @@ def get_jiggle_children(arm_matrix, pbone, lst, parent, children_of_bone):
 	for c in children_of_bone[pbone]:
 		get_jiggle_children(arm_matrix, c, lst, jiggle_bone, children_of_bone)
 
-def maxis(M,i):
-	return Vector((M[0][i],M[1][i],M[2][i]))
-def saxis(M,i,v):
+def maxis(M, i):
+	return Vector((
+		M[0][i], 
+		M[1][i], 
+		M[2][i])
+	)
+def saxis(M, i, v):
 	M[0][i] = v[0]
 	M[1][i] = v[1]
 	M[2][i] = v[2]
-def qadd(a,b):
-	return Quaternion((a[0]+b[0],a[1]+b[1],a[2]+b[2],a[3]+b[3]))
-
-K1 = Matrix().to_3x3()
-K2 = Matrix().to_3x3()
-
-def locSpring(jb):
-	global K1
-	global K2
-
-	Q0 = jb.parent.Q
-	Q1 = jb.Q
-	w0 = jb.parent.w
-	w1 = jb.w
-
-	v0 = jb.rest_p
-
-	P0 = jb.parent.P
-	P1 = jb.P
-	lf = jb.l*0.5
-
-	jb.updateIW()
-	jb.parent.updateIW()
-
-	connector0 = jb.parent.P+jb.parent.Q @ v0
-	connector1 = jb.P+jb.Q @ Vector((0,-lf,0))
-
-	computeMatrixK(connector0, w0, P0, jb.parent.iIw, K1)
-	computeMatrixK(connector1, w1, P1, jb.iIw, K2)
-
-	Kinv = (K1 + K2).inverted()
-
-	pt = Kinv @ (connector1 - connector0)
-	if (w0 != 0.0):
-		r0 = connector0 - P0
-		jb.parent.P += w0*pt
-		ot = (jb.parent.iIw @ (r0.cross(pt)))
-
-		otQ = Quaternion()
-		otQ.x =ot[0]
-		otQ.y = ot[1]
-		otQ.z = ot[2]
-		otQ.w = 0
-		jb.parent.Q = qadd(jb.parent.Q, otQ @ jb.parent.Q*0.5).normalized()
-
-	if (w1 != 0.0):
-		r1 = connector1 - P1
-		jb.P += -w1*pt
-		ot = (jb.iIw @ (r1.cross(-pt)))
-
-		otQ = Quaternion()
-		otQ.x =ot[0]
-		otQ.y = ot[1]
-		otQ.z = ot[2]
-		otQ.w = 0
-		jb.Q = qadd(jb.Q, otQ @ jb.Q*0.5).normalized()
+def qadd(a, b):
+	return Quaternion((
+		a[0] + b[0], 
+		a[1] + b[1], 
+		a[2] + b[2], 
+		a[3] + b[3])
+	)
 
 #NOTE: the following gradient computation implementation was automatically generated, if possible, it should be change for a clearer implementation
 def quatSpringGradient2(Q0, Q1, r):
@@ -607,7 +616,7 @@ def step(scene):
 				for jb in bl2:
 					if(jb.b.parent==None):
 						continue
-					locSpring(jb)
+					jb.locSpring()
 				#spring constraint
 				for jb in bl2:
 					if(jb.b.parent==None):
