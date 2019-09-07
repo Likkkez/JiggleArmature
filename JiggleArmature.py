@@ -38,8 +38,6 @@
 # 	Split into separate files: __init__, operators, jiggle, utils, ui.
 #	__init__
 #	operators
-# 		put bake() inside JARM_OT_bake
-#		put initialize_bones() inside JARM_OT_init_bones
 #	utils
 #		Just slap in all the floating utility functions so I don't have to constantly scroll past them.
 #		I feel like some of those functions might already be in the Matrix or Quaternion classes from mathutils.
@@ -59,7 +57,10 @@
 # Would be nice to clean up the physics code so we could actually make changes to it and know wtf is actually happening.
 # Currently, the simulation will progress forward in time, no matter where you move on the timeline.
 #	We could cache animation either into internal variable or an Action.
-# Gravity should be given as an absolute force, not a multiplier.
+# Gravity should be given as an absolute force, not just a multiplier.
+# Option to simulate in Pose Space, so ignore armature object transforms
+# Ability to simulate root bones (bones with no parent)
+# Currently baking is ignored when a parent bone is simulated, since the animation curves get overwritten by the physics calculation. Maybe that's fine, I'm not sure.
 
 bl_info = {
 	"name": "Jiggle Armature",
@@ -86,8 +87,6 @@ class JiggleArmature(bpy.types.PropertyGroup):
 		name="Enable physics bones on this armature")
 	fps: FloatProperty(name = "simulation fps", default = 24)
 	time_acc: FloatProperty(default = 0.0)
-
-class JiggleScene(bpy.types.PropertyGroup):
 	iterations: IntProperty(
 		name = "Iterations",
 		description="Higher values result in slower but higher quality simulation",
@@ -116,21 +115,9 @@ class JARM_PT_armature(bpy.types.Panel):
 		layout = self.layout
 		col = layout.column()
 		col.prop(context.object.data.jiggle, "fps")
-
-class JARM_PT_scene(bpy.types.Panel):
-	bl_idname = "SCENE_PT_jiggle"
-	bl_label = "Jiggle Scene"
-	bl_space_type = 'PROPERTIES'
-	bl_region_type = 'WINDOW'
-	bl_context = "scene"
-	bl_options = {'DEFAULT_CLOSED'}
-
-	def draw(self, context):
-		layout = self.layout
-		col = layout.column()
-		col.prop(context.scene.jiggle,"iterations")
-		col.operator("jiggle.bake", text="Bake Selected").a = False
-		col.operator("jiggle.bake", text="Bake All").a = True
+		col.prop(context.object.data.jiggle,"iterations")
+		col.operator("jiggle.bake", text="Bake Selected").bake_all = False
+		col.operator("jiggle.bake", text="Bake All").bake_all = True
 
 def setq(om, m):
 	for i in range(4):
@@ -540,7 +527,7 @@ def step(scene=bpy.context.scene):
 
 					jb.l = b.bone.length * scale
 					jb.w = 1.0/db.jiggle_mass
-					jb.k = 1 - pow(1 - db.jiggle_Ks, 1/scene.jiggle.iterations)
+					jb.k = 1 - pow(1 - db.jiggle_Ks, 1/arm_data.jiggle.iterations)
 					db.jiggle_V *= 1.0 - db.jiggle_Kld
 					db.jiggle_V += scene.gravity * db.gravity_multiplier * dt
 					db.jiggle_W *= 1.0 - db.jiggle_Kd
@@ -569,7 +556,7 @@ def step(scene=bpy.context.scene):
 								target_matrix = control_pb.parent.matrix.inverted() @ target_matrix
 
 						jb.cQ = target_matrix.to_quaternion().normalized()
-						jb.Kc = 1- pow(1-db.jiggle_control, 1.0/scene.jiggle.iterations)
+						jb.Kc = 1- pow(1-db.jiggle_control, 1.0/arm_data.jiggle.iterations)
 
 					jiggle_bones_data.append(jb)
 				else:
@@ -585,7 +572,7 @@ def step(scene=bpy.context.scene):
 					db.jiggle_P = M.translation + maxis(M, 1) * b.bone.length * 0.5
 					db.jiggle_W = Vector((0,0,0))
 
-			for i in range(scene.jiggle.iterations):
+			for i in range(arm_data.jiggle.iterations):
 				for jb in jiggle_bones_data:
 					db = jb.b.bone
 					if(jb.b.parent==None):
@@ -626,45 +613,44 @@ def step(scene=bpy.context.scene):
 
 				pb.matrix_basis = mb
 
-	scene.jiggle.last_frame+= 1
-
-def bake(bake_all):
-	print("Baking " + ("all" if(bake_all) else "selected") + "...")
-
-	scene = bpy.context.scene
-	scene.frame_set(scene.frame_start)
-	
-	jiggle_armatures = [o for o in scene.objects if o.type=='ARMATURE' and (o.select_get() or bake_all)]
-	
-	for i in range(scene.frame_start, scene.frame_end+1):
-		print("Frame " + str(i))
-		scene.frame_set(i)
-		for arm in jiggle_armatures:
-			for b in arm.pose.bones:
-				b.bone.select = (b.bone.select or bake_all) and b.bone.jiggle_enabled
-				if(b.bone.select):
-					M = arm.matrix_world @ b.matrix
-					db = b.bone
-					setq(db.jiggle_R, M.to_quaternion().normalized())
-					db.jiggle_V = Vector((0,0,0))
-					db.jiggle_P = M.translation + maxis(M, 1) * db.length * 0.5
-					db.jiggle_W = Vector((0,0,0))
-			bpy.ops.anim.keyframe_insert_menu(type='LocRotScale')
+	arm_data.jiggle.last_frame+= 1
 
 class JARM_OT_bake(bpy.types.Operator):
-	"""Bake jiggle bone motion to keyframes"""
-	a: BoolProperty()
+	"""Bake jiggle simulation to keyframes"""
+
 	bl_idname = "jiggle.bake"
 	bl_label = "Bake Jiggle Physics"
 
+	bake_all: BoolProperty()
+
 	def execute(self, context):
-		bake(self.a)
+		bake_all = self.bake_all
+		print("Baking " + ("all" if(bake_all) else "selected") + "...")
+
+		scene = context.scene
+		scene.frame_set(scene.frame_start)
+		
+		jiggle_armatures = [o for o in scene.objects if o.type=='ARMATURE' and (o.select_get() or bake_all)]
+		
+		for i in range(scene.frame_start, scene.frame_end+1):
+			print("Frame " + str(i))
+			scene.frame_set(i)
+			for arm in jiggle_armatures:
+				for b in arm.pose.bones:
+					b.bone.select = (b.bone.select or bake_all) and b.bone.jiggle_enabled
+					if(b.bone.select):
+						M = arm.matrix_world @ b.matrix
+						db = b.bone
+						setq(db.jiggle_R, M.to_quaternion().normalized())
+						db.jiggle_V = Vector((0,0,0))
+						db.jiggle_P = M.translation + maxis(M, 1) * db.length * 0.5
+						db.jiggle_W = Vector((0,0,0))
+				bpy.ops.anim.keyframe_insert_menu(type='LocRotScale')
+
 		return {'FINISHED'}
 
 classes = (
 	JARM_PT_armature,
-	JiggleScene,
-	JARM_PT_scene,
 	JiggleArmature,
 	JARM_OT_bake,
 	JARM_OT_set_rest,
@@ -678,9 +664,7 @@ def register():
 
 	bpy.app.handlers.frame_change_post.append(step)
 
-	bpy.types.Scene.jiggle = PointerProperty(type = JiggleScene)
-
-	bpy.types.Armature.jiggle = PointerProperty(type = JiggleArmature,options={'ANIMATABLE'})
+	bpy.types.Armature.jiggle = PointerProperty(type=JiggleArmature, options={'ANIMATABLE'})
 
 	bpy.types.Bone.jiggle_enabled = BoolProperty(
 		name = "Enable Jiggle",
