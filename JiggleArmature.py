@@ -41,13 +41,13 @@
 # 		put bake() inside JARM_OT_bake
 #		put initialize_bones() inside JARM_OT_init_bones
 #	utils
-#		Just slap all the floating utility functions so I don't have to constantly scroll past them.
+#		Just slap in all the floating utility functions so I don't have to constantly scroll past them.
+#		I feel like some of those functions might already be in the Matrix or Quaternion classes from mathutils.
 #	ui
-#		clean up armature panel UI (can probably deprecate eventually)
 #	jiggle (can find a better name)
-#		JiggleBone class and stuff related to it.
+#		JiggleBone/Armature/Scene classes and stuff related to it.
 # 			Pack all jiggle bone properties into a CollectionProperty (need a new JiggleProperties class) and append that to bpy.types.Bone.
-# 			Merge jiggle_hierarchy_bone and jiggle_hierarchy_armature classes into JiggleBone class.
+#				This would only be possible if all those properties could be custom properties, but that's not the case with matrices.
 #			Let JiggleBones simulate themselves via step(). This would probably be quite tricky. But imo it would be a lot nicer.
 #				Then the scene would have a jiggle.step() which calles every armatures' jiggle.step() which calls each of its bones' jiggle.step().
 
@@ -56,7 +56,8 @@
 # There should be an option to simply use the scene's framerate as the simulation framerate. In this case, the simulation would be expected to run "faster" - That is to say, we shouldn't compensate with the assumption that 1 second is always 24 frames. 1 second is always fps frames.
 # Let jiggle bones inherit scale of their parent bone, just like they inherit scale of the armature object.
 # Would be nice to clean up the physics code so we could actually make changes to it and know wtf is actually happening.
-
+# Currently, the simulation will progress forward in time, no matter where you move on the timeline.
+#	We could cache animation either into internal variable or an Action.
 
 bl_info = {
 	"name": "Jiggle Armature",
@@ -70,26 +71,21 @@ bl_info = {
 }
 
 import bpy
-import os
 from mathutils import *
-import math
 from math import sqrt
-import os
 from bpy.types import Menu, Panel, Operator
 from bpy_extras.io_utils import ImportHelper, ExportHelper
-from bpy.app.handlers import persistent
 from bpy.props import *
 from collections import defaultdict
 from time import time
 
 class JiggleArmature(bpy.types.PropertyGroup):
-	enabled: BoolProperty(default=True)
+	enabled: BoolProperty(default=True, 
+		name="Enable physics bones on this armature")
 	fps: FloatProperty(name = "simulation fps", default = 24)
 	time_acc: FloatProperty(default = 0.0)
 
 class JiggleScene(bpy.types.PropertyGroup):
-	test_mode: BoolProperty(default = False)
-	sub_steps: IntProperty(min = 1, default = 2)
 	iterations: IntProperty(
 		name = "Iterations",
 		description="Higher values result in slower but higher quality simulation",
@@ -105,6 +101,11 @@ class JARM_PT_armature(bpy.types.Panel):
 	bl_context = "data"
 	bl_options = {'DEFAULT_CLOSED'}
 
+	def draw_header(self, context):
+		layout = self.layout
+		arm = context.object
+		layout.prop(context.object.data.jiggle, "enabled", text="",)
+
 	@classmethod
 	def poll(cls, context):
 		return (context.object is not None and context.object.type == 'ARMATURE')
@@ -112,7 +113,6 @@ class JARM_PT_armature(bpy.types.Panel):
 	def draw(self, context):
 		layout = self.layout
 		col = layout.column()
-		col.prop(context.object.data.jiggle, "enabled")
 		col.prop(context.object.data.jiggle, "fps")
 
 class JARM_PT_scene(bpy.types.Panel):
@@ -122,11 +122,6 @@ class JARM_PT_scene(bpy.types.Panel):
 	bl_region_type = 'WINDOW'
 	bl_context = "scene"
 	bl_options = {'DEFAULT_CLOSED'}
-
-	def draw_header(self, context):
-		layout = self.layout
-		bon = context.bone
-		layout.prop(context.scene.jiggle,"test_mode", text="")
 
 	def draw(self, context):
 		layout = self.layout
@@ -185,10 +180,7 @@ class JARM_PT_bone(bpy.types.Panel):
 
 		bon = context.bone
 		col = layout.column()
-		layout.enabled = context.scene.jiggle.test_mode and armature.jiggle.enabled
-
-		if(not context.scene.jiggle.test_mode):
-			col.label(text= "JiggleArmature is disabled for the scene, see scene properties")
+		layout.enabled = armature.jiggle.enabled
 
 		if(not armature.jiggle.enabled):
 			col.label(text= "JiggleArmature is disabled for the armature, see the armature properties")
@@ -401,7 +393,7 @@ def quatSpringGradient2(Q0, Q1, r):
 	rz  =  r.z
 	rw  =  r.w
 
-	tmp0 = math.sqrt(((((((((-(Q0x*Q1w)-(Q0y*Q1z))+(Q0w*Q1x))+(Q0z*Q1y))-rx)*((((-(Q0x*Q1w)-(Q0y*Q1z))+(Q0w*Q1x))+(Q0z*Q1y))-rx))+(((((-(Q0x*Q1y)-(Q0z*Q1w))+(Q0w*Q1z))+(Q0y*Q1x))-rz)*((((-(Q0x*Q1y)-(Q0z*Q1w))+(Q0w*Q1z))+(Q0y*Q1x))-rz)))+(((((-(Q0y*Q1w)-(Q0z*Q1x))+(Q0w*Q1y))+(Q0x*Q1z))-ry)*((((-(Q0y*Q1w)-(Q0z*Q1x))+(Q0w*Q1y))+(Q0x*Q1z))-ry)))+((((((Q0w*Q1w)+(Q0x*Q1x))+(Q0y*Q1y))+(Q0z*Q1z))-rw)*(((((Q0w*Q1w)+(Q0x*Q1x))+(Q0y*Q1y))+(Q0z*Q1z))-rw))))
+	tmp0 = sqrt(((((((((-(Q0x*Q1w)-(Q0y*Q1z))+(Q0w*Q1x))+(Q0z*Q1y))-rx)*((((-(Q0x*Q1w)-(Q0y*Q1z))+(Q0w*Q1x))+(Q0z*Q1y))-rx))+(((((-(Q0x*Q1y)-(Q0z*Q1w))+(Q0w*Q1z))+(Q0y*Q1x))-rz)*((((-(Q0x*Q1y)-(Q0z*Q1w))+(Q0w*Q1z))+(Q0y*Q1x))-rz)))+(((((-(Q0y*Q1w)-(Q0z*Q1x))+(Q0w*Q1y))+(Q0x*Q1z))-ry)*((((-(Q0y*Q1w)-(Q0z*Q1x))+(Q0w*Q1y))+(Q0x*Q1z))-ry)))+((((((Q0w*Q1w)+(Q0x*Q1x))+(Q0y*Q1y))+(Q0z*Q1z))-rw)*(((((Q0w*Q1w)+(Q0x*Q1x))+(Q0y*Q1y))+(Q0z*Q1z))-rw))))
 	tmp1 = 1.0/tmp0*Q0w*Q0y
 	tmp2 = 1.0/tmp0*Q0w*Q1x
 	tmp3 = 1.0/tmp0*Q0w*Q0x
@@ -497,7 +489,7 @@ def quatSpringGradient2(Q0, Q1, r):
 
 	return c, dQ0x,dQ0y,dQ0z,dQ0w,dQ1x,dQ1y,dQ1z,dQ1w
 
-def step(scene):
+def step(scene=bpy.context.scene):
 	dt = 1.0/(scene.render.fps)
 
 	jiggle_armatures = [o for o in scene.objects if o.type=='ARMATURE' and o.data.jiggle.enabled]
@@ -642,28 +634,17 @@ def step(scene):
 
 	scene.jiggle.last_frame+= 1
 
-#baking = False
-@persistent
-def update(scene, tm = False):
-	if(not (scene.jiggle.test_mode or tm)): # or (baking and not tm)):
-		return
-	step(scene)
-
 def bake(bake_all):
 	print("Baking " + ("all" if(bake_all) else "selected") + "...")
 
 	scene = bpy.context.scene
 	scene.frame_set(scene.frame_start)
-
-	ltm = scene.jiggle.test_mode
-	scene.jiggle.test_mode = False
 	
 	jiggle_armatures = [o for o in scene.objects if o.type=='ARMATURE' and (o.select_get() or bake_all)]
 	
 	for i in range(scene.frame_start, scene.frame_end+1):
 		print("Frame " + str(i))
 		scene.frame_set(i)
-		update(scene, tm=True)
 		for arm in jiggle_armatures:
 			for b in arm.pose.bones:
 				b.bone.select = (b.bone.select or bake_all) and b.bone.jiggle_enabled
@@ -675,7 +656,6 @@ def bake(bake_all):
 					db.jiggle_P = M.translation + maxis(M, 1) * db.length * 0.5
 					db.jiggle_W = Vector((0,0,0))
 			bpy.ops.anim.keyframe_insert_menu(type='LocRotScale')
-	scene.jiggle.test_mode = ltm
 
 class JARM_OT_bake(bpy.types.Operator):
 	"""Bake jiggle bone motion to keyframes"""
@@ -702,8 +682,7 @@ def register():
 	for cls in classes:
 		register_class(cls)
 
-	bpy.app.handlers.frame_change_post.append(update)
-
+	bpy.app.handlers.frame_change_post.append(step)
 
 	bpy.types.Scene.jiggle = PointerProperty(type = JiggleScene)
 
@@ -764,7 +743,7 @@ def unregister():
 	from bpy.utils import unregister_class
 	for cls in reversed(classes):
 		unregister_class(cls)
-	bpy.app.handlers.frame_change_post.remove(update)
+	bpy.app.handlers.frame_change_post.remove(step)
 
 if __name__ == '__main__':
 	register()
