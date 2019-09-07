@@ -80,6 +80,7 @@ from bpy_extras.io_utils import ImportHelper, ExportHelper
 from bpy.app.handlers import persistent
 from bpy.props import *
 from collections import defaultdict
+from time import time
 
 class JiggleArmature(bpy.types.PropertyGroup):
 	enabled: BoolProperty(default=True)
@@ -648,51 +649,32 @@ def update(scene, tm = False):
 		return
 	step(scene)
 
-def reset_JB():
-	scene = bpy.context.scene
-	for o in scene.objects:
-		if(o.select_get() and o.type == 'ARMATURE'):
-			arm_matrix = o.matrix_world
-			scale = maxis(arm_matrix, 0).length
-			iow = arm_matrix.inverted()
-			i=0
-			for b in o.pose.bones:
-				b.bone.select = (b.bone.select or bake_all) and b.bone.jiggle_enabled
-				if(b.bone.select):
-					M = arm_matrix @ b.matrix
-					db = b.bone
-					setq(db.jiggle_R, M.to_quaternion().normalized())
-					db.jiggle_V = Vector((0,0,0))
-					db.jiggle_P = M.translation + maxis(M, 1) * b.bone.length * 0.5
-					db.jiggle_W = Vector((0,0,0))
-
 def bake(bake_all):
-	print("baking " + ("all" if(bake_all) else "selected") + "...")
-	# global baking
+	print("Baking " + ("all" if(bake_all) else "selected") + "...")
 
 	scene = bpy.context.scene
 	scene.frame_set(scene.frame_start)
 
-	reset_JB()
-
 	ltm = scene.jiggle.test_mode
 	scene.jiggle.test_mode = False
+	
+	jiggle_armatures = [o for o in scene.objects if o.type=='ARMATURE' and (o.select_get() or bake_all)]
+	
 	for i in range(scene.frame_start, scene.frame_end+1):
+		print("Frame " + str(i))
 		scene.frame_set(i)
-		update(scene,tm=True)
-		print("frame: ",i)
-		for o in scene.objects:
-			if( (o.select_get() or bake_all) and o.type == 'ARMATURE' ):
-				bpy.context.view_layer.objects.active = o
-				m = o.mode == 'POSE'
-
-				if(not m):
-					bpy.ops.object.posemode_toggle()
-
-				bpy.ops.anim.keyframe_insert_menu(type='LocRotScale')
-
-				if(not m):
-					bpy.ops.object.posemode_toggle()
+		update(scene, tm=True)
+		for arm in jiggle_armatures:
+			for b in arm.pose.bones:
+				b.bone.select = (b.bone.select or bake_all) and b.bone.jiggle_enabled
+				if(b.bone.select):
+					M = arm.matrix_world @ b.matrix
+					db = b.bone
+					setq(db.jiggle_R, M.to_quaternion().normalized())
+					db.jiggle_V = Vector((0,0,0))
+					db.jiggle_P = M.translation + maxis(M, 1) * db.length * 0.5
+					db.jiggle_W = Vector((0,0,0))
+			bpy.ops.anim.keyframe_insert_menu(type='LocRotScale')
 	scene.jiggle.test_mode = ltm
 
 class JARM_OT_bake(bpy.types.Operator):
