@@ -54,10 +54,12 @@
 ### FEATURES ###
 # The whole idea of having to enable the jiggle in the scene, then in the armature, then in the bone, seems crazy to me. We should be able to simply enable it in the bone, and have some settings for it in the scene.
 # There should be an option to simply use the scene's framerate as the simulation framerate. In this case, the simulation would be expected to run "faster" - That is to say, we shouldn't compensate with the assumption that 1 second is always 24 frames. 1 second is always fps frames.
+# 	Simulation framerate shouldn't affect the speed of physics.
 # Let jiggle bones inherit scale of their parent bone, just like they inherit scale of the armature object.
 # Would be nice to clean up the physics code so we could actually make changes to it and know wtf is actually happening.
 # Currently, the simulation will progress forward in time, no matter where you move on the timeline.
 #	We could cache animation either into internal variable or an Action.
+# Gravity should be given as an absolute force, not a multiplier.
 
 bl_info = {
 	"name": "Jiggle Armature",
@@ -127,7 +129,6 @@ class JARM_PT_scene(bpy.types.Panel):
 		layout = self.layout
 		col = layout.column()
 		col.prop(context.scene.jiggle,"iterations")
-		col.operator("jiggle.initialize", text="Initialize Bones")
 		col.operator("jiggle.bake", text="Bake Selected").a = False
 		col.operator("jiggle.bake", text="Bake All").a = True
 
@@ -224,16 +225,13 @@ class JiggleBone:
 		self.iIw = self.iI
 
 	def computeI(self):
-		self.iI = Matrix.Identity(3)*(self.w/(self.l*self.l)*5.0/2.0)
+		self.iI = Matrix.Identity(3) * (self.w / (self.l * self.l) * 5.0 / 2.0)
 
 	def updateIW(self):
 		rot = self.Q.to_matrix()
 		self.iIw = rot@self.iI @ rot.transposed()
 	
 	def locSpring(self):
-
-		Q0 = self.parent.Q
-		Q1 = self.Q
 		w0 = self.parent.w
 		w1 = self.w
 
@@ -247,7 +245,7 @@ class JiggleBone:
 		self.parent.updateIW()
 
 		connector0 = self.parent.P+self.parent.Q @ v0
-		connector1 = self.P+self.Q @ Vector((0,-lf,0))
+		connector1 = self.P+self.Q @ Vector((0, -lf, 0))
 
 		K1 = self.computeMatrixK(connector0, w0, P0, self.parent.iIw)
 		K2 = self.computeMatrixK(connector1, w1, P1, self.iIw)
@@ -284,6 +282,7 @@ class JiggleBone:
 		Q1 = self.Q
 		w0 = self.parent.w
 		w1 = self.w
+
 		if(r==None):
 			r = self.rest.to_quaternion()
 		if(k==None):
@@ -295,29 +294,28 @@ class JiggleBone:
 
 		c, dQ0x,dQ0y,dQ0z,dQ0w,dQ1x,dQ1y,dQ1z,dQ1w = quatSpringGradient2(Q0,Q1,r)
 
-		div = dQ0x*dQ0x*w0 + \
-			dQ0y*dQ0y*w0 + \
-			dQ0z*dQ0z*w0 + \
-			dQ0w*dQ0w*w0 + \
-			dQ1x*dQ1x*w1 + \
-			dQ1y*dQ1y*w1 + \
-			dQ1z*dQ1z*w1 + \
-			dQ1w*dQ1w*w1
+		div = 	dQ0x * dQ0x * w0 + \
+				dQ0y * dQ0y * w0 + \
+				dQ0z * dQ0z * w0 + \
+				dQ0w * dQ0w * w0 + \
+				dQ1x * dQ1x * w1 + \
+				dQ1y * dQ1y * w1 + \
+				dQ1z * dQ1z * w1 + \
+				dQ1w * dQ1w * w1
 
-		if(div> 1e-8):
-			s = -c/div
-			if(w0>0.0):
-
-				Q0.x+=dQ0x*s*w0*k
-				Q0.y+=dQ0y*s*w0*k
-				Q0.z+=dQ0z*s*w0*k
-				Q0.w+=dQ0w*s*w0*k
+		if(div > 1e-8):
+			s = -c / div
+			if(w0 > 0.0):
+				Q0.x += dQ0x * s * w0 * k
+				Q0.y += dQ0y * s * w0 * k
+				Q0.z += dQ0z * s * w0 * k
+				Q0.w += dQ0w * s * w0 * k
 				self.parent.Q = Q0.normalized()
 
-			Q1.x+=dQ1x*s*w1*k
-			Q1.y+=dQ1y*s*w1*k
-			Q1.z+=dQ1z*s*w1*k
-			Q1.w+=dQ1w*s*w1*k
+			Q1.x += dQ1x * s * w1 * k
+			Q1.y += dQ1y * s * w1 * k
+			Q1.z += dQ1z * s * w1 * k
+			Q1.w += dQ1w * s * w1 * k
 			self.Q = Q1.normalized()
 
 	@staticmethod
@@ -507,19 +505,19 @@ def step(scene=bpy.context.scene):
 		while arm_data.jiggle.time_acc > 1:
 			arm_data.jiggle.time_acc -= 1
 
-			jiggle_bones = []	# List that will store our JiggleBone objects. (We create a JiggleBone for every bone, not just jigglebones... which makes no sense, so TODO)
+			all_jiggle_data = []	# List that will store our JiggleBone objects. (We create a JiggleBone for every bone, not just the ones that have jiggle enabled.)
 			for b in arm_obj.pose.bones:
 				if(b.parent==None):
-					get_jiggle_children(arm_matrix, b, jiggle_bones, None, children_of_bone)
+					get_jiggle_children(arm_matrix, b, all_jiggle_data, None, children_of_bone)
 
-			bl2 = []	# TODO How does this differ from jiggle_bones?
-			for jb in jiggle_bones:
+			for jb in all_jiggle_data:
 				b = jb.b
 				jb.rest_w = b.bone.matrix_local.copy()
 				saxis(jb.rest_w, 3, maxis(jb.rest_w, 3) * scale)
 				saxis(jb.rest_w, 3, maxis(jb.rest_w, 3)+maxis(jb.rest_w, 1) * b.bone.length * 0.5 * scale)
 
-			for jb in jiggle_bones:
+			jiggle_bones_data = []	# For storing the jiggle data of only those bones that have jiggle enabled. (NOTE: Hierarchical order matters!)
+			for jb in all_jiggle_data:
 				b = jb.b
 
 				jb.restW = b.bone.matrix_local.copy() * scale
@@ -573,7 +571,7 @@ def step(scene=bpy.context.scene):
 						jb.cQ = target_matrix.to_quaternion().normalized()
 						jb.Kc = 1- pow(1-db.jiggle_control, 1.0/scene.jiggle.iterations)
 
-					bl2.append(jb)
+					jiggle_bones_data.append(jb)
 				else:
 					jb.w = 0
 					jb.X = jb.P = M.translation + maxis(M, 1) * b.bone.length * 0.5
@@ -588,20 +586,16 @@ def step(scene=bpy.context.scene):
 					db.jiggle_W = Vector((0,0,0))
 
 			for i in range(scene.jiggle.iterations):
-				#parent constraint
-				for jb in bl2:
+				for jb in jiggle_bones_data:
+					db = jb.b.bone
 					if(jb.b.parent==None):
 						continue
-					jb.locSpring()
-				#spring constraint
-				for jb in bl2:
-					if(jb.b.parent==None):
-						continue
-					jb.quatSpring(db.jiggle_rest if db.jiggle_use_custom_rest else jb.rest.to_quaternion().normalized())
+					jb.locSpring()	#parent constraint
+					jb.quatSpring(db.jiggle_rest if db.jiggle_use_custom_rest else jb.rest.to_quaternion().normalized())	#spring constraint
 					if(jb.cQ):
 						jb.quatSpring(jb.cQ, jb.Kc)
 
-			for jb in bl2:
+			for jb in jiggle_bones_data:
 				db = jb.b.bone
 
 				jb.Q = jb.Q.normalized()
@@ -623,7 +617,7 @@ def step(scene=bpy.context.scene):
 				jb.M[1][3] = cp[1]
 				jb.M[2][3] = cp[2]
 
-			for jb in bl2:
+			for jb in jiggle_bones_data:
 				pb = jb.b
 				pM = arm_matrix
 				if(pb.parent):
