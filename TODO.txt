@@ -1,0 +1,21 @@
+# TODO
+
+### REFACTOR ###
+# Check if some util functions aren't already available from mathutils.
+# Pack all jiggle bone properties into a CollectionProperty (need a new JiggleProperties class) and append that to bpy.types.Bone.
+#   This would only be possible if all those properties could be custom properties, but that's not the case with matrices.
+# Let JiggleBones simulate themselves via step(). This would probably be quite tricky. But imo it would be a lot nicer.
+#	Then the scene would have a jiggle.step() which calles every armatures' jiggle.step() which calls each of its bones' jiggle.step().
+
+### FEATURES ###
+# There should be an option to simply use the scene's framerate as the simulation framerate. In this case, the simulation would be expected to run "faster" - That is to say, we shouldn't compensate with the assumption that 1 second is always 24 frames. 1 second is always fps frames.
+# 	Simulation framerate shouldn't affect the speed of physics.
+# Let jiggle bones inherit scale of their parent bone, just like they inherit scale of the armature object.
+# Would be nice to clean up the physics code so we could actually make changes to it and know wtf is actually happening.
+# Currently, the simulation will progress forward in time, no matter where you move on the timeline.
+#	We could cache animation either into internal variable or an Action.
+#       Does python have access to the blue line in the timeline to indicate cache?
+# Gravity should be given as an absolute force, not just a multiplier.
+# Option to simulate in Pose Space, so ignore armature object transforms
+# Ability to simulate root bones (bones with no parent)
+# Currently baking is ignored when a parent bone is simulated, since the animation curves get overwritten by the physics calculation. Maybe that's fine, I'm not sure.
