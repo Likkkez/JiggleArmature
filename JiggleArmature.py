@@ -577,6 +577,7 @@ def find_children(arm, parent_jhb):
 
 @persistent
 def initialize_bones(scene):
+	scene=bpy.context.scene
 	global jiggle_arm_list
 	jiggle_arm_list.clear()
 	for o in scene.objects:
