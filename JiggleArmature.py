@@ -742,6 +742,9 @@ def update(scene, tm = False):
 	if(not (scene.jiggle.test_mode or tm)): # or (baking and not tm)):
 		return
 	step(scene)
+@persistent
+def update_handler(dummy):
+    update(bpy.context.scene,False)
 
 
 def reset_JB(select_all):
@@ -830,7 +833,7 @@ def register():
 	for cls in classes:
 		register_class(cls)
 
-	bpy.app.handlers.frame_change_post.append(update)
+	bpy.app.handlers.frame_change_post.append(update_handler)
 
 	bpy.app.handlers.load_post.append(initialize_bones)
 
@@ -901,7 +904,7 @@ def unregister():
 	from bpy.utils import unregister_class
 	for cls in reversed(classes):
 		unregister_class(cls)
-	bpy.app.handlers.frame_change_post.remove(update)
+	bpy.app.handlers.frame_change_post.remove(update_handler)
 	bpy.app.handlers.load_post.remove(initialize_bones)
 
 if __name__ == '__main__':
